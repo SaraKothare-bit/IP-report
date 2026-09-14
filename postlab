@@ -1,0 +1,3852 @@
+from flask import Flask, request, render_template_string, redirect, url_for
+import cv2
+import numpy as np
+import base64
+import time
+import os
+
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 12 * 1024 * 1024
+
+
+# ============================================================
+# PRACTICAL / POST LAB DATA
+# ============================================================
+
+PRACTICALS = [
+    {
+        "id": "p02",
+        "title": "Practical 02",
+        "subtitle": "Image Arithmetic & Bitwise Operations",
+        "operations": [
+            ("rgb", "RGB Image"),
+            ("gray", "Grayscale"),
+            ("binary", "Binary"),
+            ("addition", "Image Addition"),
+            ("subtraction", "Image Subtraction"),
+            ("multiplication", "Image Multiplication"),
+            ("bitwise_and", "Bitwise AND"),
+            ("bitwise_or", "Bitwise OR"),
+            ("bitwise_xor", "Bitwise XOR"),
+            ("bitwise_not", "Bitwise NOT")
+        ]
+    },
+    {
+        "id": "p03",
+        "title": "Practical 03",
+        "subtitle": "Geometric Transformations",
+        "operations": [
+            ("translation", "Translation"),
+            ("rotation", "Rotation"),
+            ("scaling", "Scaling"),
+            ("shear_x", "X Shearing"),
+            ("shear_y", "Y Shearing"),
+            ("reflect_x", "X Reflection"),
+            ("reflect_y", "Y Reflection"),
+            ("crop", "Cropping")
+        ]
+    },
+    {
+        "id": "p04",
+        "title": "Practical 04",
+        "subtitle": "Image Enhancement & Thresholding",
+        "operations": [
+            ("negative", "Negative"),
+            ("brightness", "Brightness & Contrast"),
+            ("laplacian", "Laplacian Sharpening"),
+            ("histogram", "Histogram Equalization"),
+            ("threshold_binary", "Binary Threshold"),
+            ("threshold_inverse", "Inverse Threshold"),
+            ("threshold_trunc", "Truncate Threshold"),
+            ("threshold_zero", "To Zero Threshold"),
+            ("threshold_zi", "To Zero Inverted")
+        ]
+    },
+    {
+        "id": "p05",
+        "title": "Practical 05",
+        "subtitle": "Image Filtering",
+        "operations": [
+            ("average", "Averaging Filter"),
+            ("gaussian", "Gaussian Filter"),
+            ("median", "Median Filter"),
+            ("bilateral", "Bilateral Filter")
+        ]
+    },
+    {
+        "id": "p06",
+        "title": "Practical 06",
+        "subtitle": "Noise Removal & Inpainting",
+        "operations": [
+            ("gaussian_noise", "Gaussian Noise Removal"),
+            ("sp_noise", "Salt & Pepper Removal"),
+            ("nlm", "Non-Local Means"),
+            ("telea", "Telea Inpainting"),
+            ("ns", "Navier-Stokes Inpainting")
+        ]
+    },
+    {
+        "id": "p07",
+        "title": "Practical 07",
+        "subtitle": "Image Compression",
+        "operations": [
+            ("jpeg", "JPEG Compression"),
+            ("png", "PNG Compression"),
+            ("rle", "Run Length Encoding"),
+            ("lzw", "LZW Compression")
+        ]
+    },
+    {
+        "id": "p08",
+        "title": "Practical 08",
+        "subtitle": "Binary Morphological Operations",
+        "operations": [
+            ("erosion", "Erosion"),
+            ("dilation", "Dilation"),
+            ("opening", "Opening"),
+            ("closing", "Closing")
+        ]
+    },
+    {
+        "id": "p09",
+        "title": "Practical 09",
+        "subtitle": "Correlation & Template Matching",
+        "operations": [
+            ("correlation", "Correlation / Template Matching")
+        ]
+    }
+]
+
+POST_LABS = [
+    ("post_hsv", "HSV Color Space"),
+    ("post_ycrcb", "YCrCb Color Space"),
+    ("post_lab", "Lab Color Space"),
+    ("post_canny", "Canny Edge Detection"),
+    ("post_sobel", "Sobel Edge Detection"),
+    ("post_prewitt", "Prewitt Edge Detection")
+]
+
+
+OP_INFO = {
+    "rgb": "Converts and displays the image in RGB representation.",
+    "gray": "Converts the input image from BGR/RGB representation into grayscale.",
+    "binary": "Creates a binary image using a threshold value.",
+    "addition": "Adds two images pixel by pixel.",
+    "subtraction": "Subtracts the second image from the first image.",
+    "multiplication": "Performs pixel-wise image multiplication.",
+    "bitwise_and": "Performs logical AND operation between two images.",
+    "bitwise_or": "Performs logical OR operation between two images.",
+    "bitwise_xor": "Performs logical XOR operation between two images.",
+    "bitwise_not": "Inverts the binary values of the input image.",
+    "translation": "Moves the image horizontally and vertically.",
+    "rotation": "Rotates the image around its center.",
+    "scaling": "Changes the size of the image.",
+    "shear_x": "Applies horizontal shearing.",
+    "shear_y": "Applies vertical shearing.",
+    "reflect_x": "Reflects the image around the X-axis.",
+    "reflect_y": "Reflects the image around the Y-axis.",
+    "crop": "Extracts the central portion of the image.",
+    "negative": "Creates the photographic negative of the image.",
+    "brightness": "Changes image brightness and contrast.",
+    "laplacian": "Uses Laplacian filtering for image sharpening.",
+    "histogram": "Improves contrast using histogram equalization.",
+    "threshold_binary": "Applies binary thresholding.",
+    "threshold_inverse": "Applies inverse binary thresholding.",
+    "threshold_trunc": "Applies truncation thresholding.",
+    "threshold_zero": "Applies To Zero thresholding.",
+    "threshold_zi": "Applies To Zero Inverted thresholding.",
+    "average": "Smooths the image using an averaging filter.",
+    "gaussian": "Reduces noise using Gaussian smoothing.",
+    "median": "Reduces impulse noise using median filtering.",
+    "bilateral": "Smooths the image while preserving edges.",
+    "gaussian_noise": "Reduces Gaussian noise using Gaussian filtering.",
+    "sp_noise": "Reduces salt-and-pepper noise using median filtering.",
+    "nlm": "Uses Non-Local Means denoising.",
+    "telea": "Performs image inpainting using the Telea method.",
+    "ns": "Performs image inpainting using the Navier-Stokes method.",
+    "jpeg": "Compresses the image using JPEG encoding.",
+    "png": "Compresses the image using PNG encoding.",
+    "rle": "Calculates an educational Run Length Encoding estimate.",
+    "lzw": "Calculates an educational LZW compression estimate.",
+    "erosion": "Shrinks foreground regions using erosion.",
+    "dilation": "Expands foreground regions using dilation.",
+    "opening": "Performs erosion followed by dilation.",
+    "closing": "Performs dilation followed by erosion.",
+    "correlation": "Performs template matching using normalized correlation.",
+    "post_hsv": "Converts the image to HSV and reconstructs it for display.",
+    "post_ycrcb": "Converts the image to YCrCb and reconstructs it for display.",
+    "post_lab": "Converts the image to Lab and reconstructs it for display.",
+    "post_canny": "Detects edges using the Canny edge detector.",
+    "post_sobel": "Detects edges using Sobel operators.",
+    "post_prewitt": "Detects edges using Prewitt operators."
+}
+
+
+# ============================================================
+# IMAGE HELPERS
+# ============================================================
+
+def read_uploaded_image(file):
+    if file is None or file.filename == "":
+        raise ValueError("Please upload an image.")
+
+    data = file.read()
+
+    if not data:
+        raise ValueError("The uploaded file is empty.")
+
+    array = np.frombuffer(data, np.uint8)
+    image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+
+    if image is None:
+        raise ValueError("Unable to read the uploaded image.")
+
+    return image
+
+
+def resize_second_image(image1, image2):
+    h, w = image1.shape[:2]
+    return cv2.resize(image2, (w, h))
+
+
+def image_to_base64(image):
+    if image is None:
+        return None
+
+    if len(image.shape) == 2:
+        output = image
+    else:
+        output = image
+
+    output = np.clip(output, 0, 255).astype(np.uint8)
+
+    success, buffer = cv2.imencode(".png", output)
+
+    if not success:
+        return None
+
+    return base64.b64encode(buffer).decode("utf-8")
+
+
+def calculate_statistics(image):
+    if image is None:
+        return {}
+
+    height, width = image.shape[:2]
+
+    if len(image.shape) == 2:
+        channels = 1
+    else:
+        channels = image.shape[2]
+
+    return {
+        "width": width,
+        "height": height,
+        "channels": channels,
+        "pixels": width * height,
+        "dtype": str(image.dtype),
+        "minimum": int(np.min(image)),
+        "maximum": int(np.max(image)),
+        "mean": round(float(np.mean(image)), 2)
+    }
+
+
+def create_mask(image):
+    """
+    Creates a small central mask for demonstration of
+    automatic inpainting.
+    """
+    mask = np.zeros(image.shape[:2], dtype=np.uint8)
+
+    h, w = mask.shape
+
+    box_w = max(10, int(w * 0.12))
+    box_h = max(10, int(h * 0.12))
+
+    x1 = max(0, w // 2 - box_w // 2)
+    y1 = max(0, h // 2 - box_h // 2)
+
+    x2 = min(w, x1 + box_w)
+    y2 = min(h, y1 + box_h)
+
+    mask[y1:y2, x1:x2] = 255
+
+    return mask
+
+
+# ============================================================
+# COMPRESSION ESTIMATES
+# ============================================================
+
+def rle_estimate(image):
+    """
+    Educational RLE estimate.
+    The image is reduced before calculation to keep
+    processing fast.
+    """
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    h, w = gray.shape
+
+    scale = min(1.0, 256 / max(h, w))
+
+    if scale < 1.0:
+        gray = cv2.resize(
+            gray,
+            (
+                max(1, int(w * scale)),
+                max(1, int(h * scale))
+            )
+        )
+
+    data = gray.flatten()
+
+    if len(data) == 0:
+        return 0, 0
+
+    runs = 1 + int(np.count_nonzero(data[1:] != data[:-1]))
+
+    original = len(data)
+
+    estimated = runs * 2
+
+    return original, estimated
+
+
+def lzw_estimate(image):
+    """
+    Educational LZW estimate.
+    Only a limited grayscale sample is used so that
+    the browser application remains responsive.
+    """
+
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+    h, w = gray.shape
+
+    scale = min(1.0, 256 / max(h, w))
+
+    if scale < 1.0:
+        gray = cv2.resize(
+            gray,
+            (
+                max(1, int(w * scale)),
+                max(1, int(h * scale))
+            )
+        )
+
+    data = gray.flatten().tolist()
+
+    data = data[:65536]
+
+    if not data:
+        return 0, 0
+
+    dictionary = {bytes([i]): i for i in range(256)}
+
+    next_code = 256
+    current = bytes([data[0]])
+    codes = 0
+
+    for value in data[1:]:
+        symbol = bytes([value])
+        combined = current + symbol
+
+        if combined in dictionary:
+            current = combined
+        else:
+            codes += 1
+
+            if next_code < 65535:
+                dictionary[combined] = next_code
+                next_code += 1
+
+            current = symbol
+
+    codes += 1
+
+    return len(data), codes
+
+
+# ============================================================
+# IMAGE PROCESSING ENGINE
+# ============================================================
+
+def process_image(image, operation, form, second_image=None):
+
+    # --------------------------------------------------------
+    # RGB
+    # --------------------------------------------------------
+
+    if operation == "rgb":
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        return cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR), "RGB representation generated."
+
+    # --------------------------------------------------------
+    # GRAYSCALE
+    # --------------------------------------------------------
+
+    if operation == "gray":
+        result = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return result, "Grayscale image generated."
+
+    # --------------------------------------------------------
+    # BINARY
+    # --------------------------------------------------------
+
+    if operation == "binary":
+        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        threshold = int(form.get("threshold", 127))
+        threshold = max(0, min(255, threshold))
+
+        _, result = cv2.threshold(
+            gray,
+            threshold,
+            255,
+            cv2.THRESH_BINARY
+        )
+
+        return result, f"Binary threshold applied at {threshold}."
+
+    # --------------------------------------------------------
+    # TWO IMAGE OPERATIONS
+    # --------------------------------------------------------
+
+    if operation in [
+        "addition",
+        "subtraction",
+        "multiplication",
+        "bitwise_and",
+        "bitwise_or",
+        "bitwise_xor"
+    ]:
+
+        if second_image is None:
+            raise ValueError(
+                "This operation requires a second image."
+            )
+
+        second_image = resize_second_image(image, second_image)
+
+        if operation == "addition":
+            result = cv2.add(image, second_image)
+            return result, "Two images added pixel by pixel."
+
+        if operation == "subtraction":
+            result = cv2.subtract(image, second_image)
+            return result, "Second image subtracted from first image."
+
+        if operation == "multiplication":
+            a = image.astype(np.float32) / 255.0
+            b = second_image.astype(np.float32) / 255.0
+
+            result = np.clip(a * b * 255, 0, 255).astype(np.uint8)
+
+            return result, "Two images multiplied pixel by pixel."
+
+        if operation == "bitwise_and":
+            result = cv2.bitwise_and(image, second_image)
+            return result, "Bitwise AND operation completed."
+
+        if operation == "bitwise_or":
+            result = cv2.bitwise_or(image, second_image)
+            return result, "Bitwise OR operation completed."
+
+        if operation == "bitwise_xor":
+            result = cv2.bitwise_xor(image, second_image)
+            return result, "Bitwise XOR operation completed."
+
+    # --------------------------------------------------------
+    # BITWISE NOT
+    # --------------------------------------------------------
+
+    if operation == "bitwise_not":
+        result = cv2.bitwise_not(image)
+        return result, "Bitwise NOT operation completed."
+
+    # --------------------------------------------------------
+    # TRANSLATION
+    # --------------------------------------------------------
+
+    if operation == "translation":
+
+        x = int(float(form.get("tx", 100)))
+        y = int(float(form.get("ty", 50)))
+
+        matrix = np.float32([
+            [1, 0, x],
+            [0, 1, y]
+        ])
+
+        h, w = image.shape[:2]
+
+        result = cv2.warpAffine(
+            image,
+            matrix,
+            (w, h)
+        )
+
+        return result, f"Translated by X={x}, Y={y}."
+
+    # --------------------------------------------------------
+    # ROTATION
+    # --------------------------------------------------------
+
+    if operation == "rotation":
+
+        angle = float(form.get("angle", 30))
+
+        h, w = image.shape[:2]
+
+        center = (w // 2, h // 2)
+
+        matrix = cv2.getRotationMatrix2D(
+            center,
+            angle,
+            1.0
+        )
+
+        result = cv2.warpAffine(
+            image,
+            matrix,
+            (w, h)
+        )
+
+        return result, f"Image rotated by {angle} degrees."
+
+    # --------------------------------------------------------
+    # SCALING
+    # --------------------------------------------------------
+
+    if operation == "scaling":
+
+        scale = float(form.get("scale", 0.6))
+
+        scale = max(0.1, min(3.0, scale))
+
+        result = cv2.resize(
+            image,
+            None,
+            fx=scale,
+            fy=scale,
+            interpolation=cv2.INTER_LINEAR
+        )
+
+        return result, f"Image scaled by factor {scale}."
+
+    # --------------------------------------------------------
+    # X SHEARING
+    # --------------------------------------------------------
+
+    if operation == "shear_x":
+
+        shear = float(form.get("shear", 0.3))
+
+        h, w = image.shape[:2]
+
+        matrix = np.float32([
+            [1, shear, 0],
+            [0, 1, 0]
+        ])
+
+        new_width = int(w + abs(shear) * h)
+
+        result = cv2.warpAffine(
+            image,
+            matrix,
+            (new_width, h)
+        )
+
+        return result, f"X shearing applied with factor {shear}."
+
+    # --------------------------------------------------------
+    # Y SHEARING
+    # --------------------------------------------------------
+
+    if operation == "shear_y":
+
+        shear = float(form.get("shear", 0.3))
+
+        h, w = image.shape[:2]
+
+        matrix = np.float32([
+            [1, 0, 0],
+            [shear, 1, 0]
+        ])
+
+        new_height = int(h + abs(shear) * w)
+
+        result = cv2.warpAffine(
+            image,
+            matrix,
+            (w, new_height)
+        )
+
+        return result, f"Y shearing applied with factor {shear}."
+
+    # --------------------------------------------------------
+    # REFLECTION
+    # --------------------------------------------------------
+
+    if operation == "reflect_x":
+
+        result = cv2.flip(image, 0)
+
+        return result, "X-axis reflection completed."
+
+    if operation == "reflect_y":
+
+        result = cv2.flip(image, 1)
+
+        return result, "Y-axis reflection completed."
+
+    # --------------------------------------------------------
+    # CROPPING
+    # --------------------------------------------------------
+
+    if operation == "crop":
+
+        h, w = image.shape[:2]
+
+        x1 = int(w * 0.20)
+        x2 = int(w * 0.80)
+
+        y1 = int(h * 0.20)
+        y2 = int(h * 0.80)
+
+        result = image[y1:y2, x1:x2]
+
+        return result, "Central 60% of the image cropped."
+
+    # --------------------------------------------------------
+    # NEGATIVE
+    # --------------------------------------------------------
+
+    if operation == "negative":
+
+        result = 255 - image
+
+        return result, "Image negative generated."
+
+    # --------------------------------------------------------
+    # BRIGHTNESS & CONTRAST
+    # --------------------------------------------------------
+
+    if operation == "brightness":
+
+        alpha = float(form.get("alpha", 2.3))
+        beta = int(float(form.get("beta", 10)))
+
+        alpha = max(0.1, min(5.0, alpha))
+        beta = max(-255, min(255, beta))
+
+        result = cv2.convertScaleAbs(
+            image,
+            alpha=alpha,
+            beta=beta
+        )
+
+        return result, f"Contrast={alpha}, Brightness={beta}."
+
+    # --------------------------------------------------------
+    # LAPLACIAN SHARPENING
+    # --------------------------------------------------------
+
+    if operation == "laplacian":
+
+        lap = cv2.Laplacian(
+            image,
+            cv2.CV_64F
+        )
+
+        lap = np.uint8(
+            np.absolute(lap)
+        )
+
+        result = cv2.addWeighted(
+            image,
+            1.0,
+            lap,
+            1.0,
+            0
+        )
+
+        return result, "Laplacian sharpening completed."
+
+    # --------------------------------------------------------
+    # HISTOGRAM EQUALIZATION
+    # --------------------------------------------------------
+
+    if operation == "histogram":
+
+        if len(image.shape) == 3:
+
+            ycrcb = cv2.cvtColor(
+                image,
+                cv2.COLOR_BGR2YCrCb
+            )
+
+            ycrcb[:, :, 0] = cv2.equalizeHist(
+                ycrcb[:, :, 0]
+            )
+
+            result = cv2.cvtColor(
+                ycrcb,
+                cv2.COLOR_YCrCb2BGR
+            )
+
+        else:
+
+            result = cv2.equalizeHist(image)
+
+        return result, "Histogram equalization completed."
+
+    # --------------------------------------------------------
+    # THRESHOLDING
+    # --------------------------------------------------------
+
+    threshold_operations = {
+        "threshold_binary": cv2.THRESH_BINARY,
+        "threshold_inverse": cv2.THRESH_BINARY_INV,
+        "threshold_trunc": cv2.THRESH_TRUNC,
+        "threshold_zero": cv2.THRESH_TOZERO,
+        "threshold_zi": cv2.THRESH_TOZERO_INV
+    }
+
+    if operation in threshold_operations:
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        threshold = int(
+            form.get("threshold", 127)
+        )
+
+        threshold = max(
+            0,
+            min(255, threshold)
+        )
+
+        _, result = cv2.threshold(
+            gray,
+            threshold,
+            255,
+            threshold_operations[operation]
+        )
+
+        return result, f"Threshold value used: {threshold}."
+
+    # --------------------------------------------------------
+    # AVERAGING
+    # --------------------------------------------------------
+
+    if operation == "average":
+
+        result = cv2.blur(
+            image,
+            (5, 5)
+        )
+
+        return result, "5x5 averaging filter applied."
+
+    # --------------------------------------------------------
+    # GAUSSIAN FILTER
+    # --------------------------------------------------------
+
+    if operation == "gaussian":
+
+        result = cv2.GaussianBlur(
+            image,
+            (5, 5),
+            0
+        )
+
+        return result, "5x5 Gaussian filter applied."
+
+    # --------------------------------------------------------
+    # MEDIAN FILTER
+    # --------------------------------------------------------
+
+    if operation == "median":
+
+        result = cv2.medianBlur(
+            image,
+            5
+        )
+
+        return result, "5x5 median filter applied."
+
+    # --------------------------------------------------------
+    # BILATERAL FILTER
+    # --------------------------------------------------------
+
+    if operation == "bilateral":
+
+        result = cv2.bilateralFilter(
+            image,
+            9,
+            75,
+            75
+        )
+
+        return result, "Bilateral filtering completed."
+
+    # --------------------------------------------------------
+    # GAUSSIAN NOISE REMOVAL
+    # --------------------------------------------------------
+
+    if operation == "gaussian_noise":
+
+        result = cv2.GaussianBlur(
+            image,
+            (5, 5),
+            0
+        )
+
+        return result, "Gaussian noise reduced using Gaussian filtering."
+
+    # --------------------------------------------------------
+    # SALT & PEPPER NOISE
+    # --------------------------------------------------------
+
+    if operation == "sp_noise":
+
+        result = cv2.medianBlur(
+            image,
+            5
+        )
+
+        return result, "Salt-and-pepper noise reduced using median filtering."
+
+    # --------------------------------------------------------
+    # NON LOCAL MEANS
+    # --------------------------------------------------------
+
+    if operation == "nlm":
+
+        result = cv2.fastNlMeansDenoisingColored(
+            image,
+            None,
+            10,
+            10,
+            7,
+            21
+        )
+
+        return result, "Non-Local Means denoising completed."
+
+    # --------------------------------------------------------
+    # TELEA INPAINTING
+    # --------------------------------------------------------
+
+    if operation == "telea":
+
+        mask = create_mask(image)
+
+        result = cv2.inpaint(
+            image,
+            mask,
+            3,
+            cv2.INPAINT_TELEA
+        )
+
+        return result, "Telea inpainting applied using an automatic central mask."
+
+    # --------------------------------------------------------
+    # NAVIER-STOKES INPAINTING
+    # --------------------------------------------------------
+
+    if operation == "ns":
+
+        mask = create_mask(image)
+
+        result = cv2.inpaint(
+            image,
+            mask,
+            3,
+            cv2.INPAINT_NS
+        )
+
+        return result, "Navier-Stokes inpainting applied using an automatic central mask."
+
+    # --------------------------------------------------------
+    # JPEG COMPRESSION
+    # --------------------------------------------------------
+
+    if operation == "jpeg":
+
+        quality = int(
+            form.get("jpeg_quality", 30)
+        )
+
+        quality = max(
+            1,
+            min(100, quality)
+        )
+
+        success, encoded = cv2.imencode(
+            ".jpg",
+            image,
+            [
+                cv2.IMWRITE_JPEG_QUALITY,
+                quality
+            ]
+        )
+
+        if not success:
+            raise ValueError("JPEG compression failed.")
+
+        result = cv2.imdecode(
+            encoded,
+            cv2.IMREAD_COLOR
+        )
+
+        return result, f"JPEG compression applied with quality {quality}."
+
+    # --------------------------------------------------------
+    # PNG COMPRESSION
+    # --------------------------------------------------------
+
+    if operation == "png":
+
+        compression = int(
+            form.get("png_compression", 9)
+        )
+
+        compression = max(
+            0,
+            min(9, compression)
+        )
+
+        success, encoded = cv2.imencode(
+            ".png",
+            image,
+            [
+                cv2.IMWRITE_PNG_COMPRESSION,
+                compression
+            ]
+        )
+
+        if not success:
+            raise ValueError("PNG compression failed.")
+
+        result = cv2.imdecode(
+            encoded,
+            cv2.IMREAD_COLOR
+        )
+
+        return result, f"PNG compression level {compression} applied."
+
+    # --------------------------------------------------------
+    # RLE
+    # --------------------------------------------------------
+
+    if operation == "rle":
+
+        original, estimated = rle_estimate(image)
+
+        ratio = (
+            original / estimated
+            if estimated > 0
+            else 0
+        )
+
+        return image, (
+            f"Educational RLE estimate completed. "
+            f"Original units={original}, "
+            f"estimated encoded units={estimated}, "
+            f"ratio={ratio:.2f}."
+        )
+
+    # --------------------------------------------------------
+    # LZW
+    # --------------------------------------------------------
+
+    if operation == "lzw":
+
+        original, codes = lzw_estimate(image)
+
+        ratio = (
+            original / codes
+            if codes > 0
+            else 0
+        )
+
+        return image, (
+            f"Educational LZW estimate completed. "
+            f"Sample symbols={original}, "
+            f"LZW codes={codes}, "
+            f"ratio={ratio:.2f}."
+        )
+
+    # --------------------------------------------------------
+    # MORPHOLOGY
+    # --------------------------------------------------------
+
+    if operation in [
+        "erosion",
+        "dilation",
+        "opening",
+        "closing"
+    ]:
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        _, binary = cv2.threshold(
+            gray,
+            127,
+            255,
+            cv2.THRESH_BINARY
+        )
+
+        kernel = np.ones(
+            (5, 5),
+            np.uint8
+        )
+
+        if operation == "erosion":
+
+            result = cv2.erode(
+                binary,
+                kernel,
+                iterations=1
+            )
+
+            return result, "5x5 erosion applied."
+
+        if operation == "dilation":
+
+            result = cv2.dilate(
+                binary,
+                kernel,
+                iterations=1
+            )
+
+            return result, "5x5 dilation applied."
+
+        if operation == "opening":
+
+            result = cv2.morphologyEx(
+                binary,
+                cv2.MORPH_OPEN,
+                kernel
+            )
+
+            return result, "Morphological opening applied."
+
+        if operation == "closing":
+
+            result = cv2.morphologyEx(
+                binary,
+                cv2.MORPH_CLOSE,
+                kernel
+            )
+
+            return result, "Morphological closing applied."
+
+    # --------------------------------------------------------
+    # CORRELATION / TEMPLATE MATCHING
+    # --------------------------------------------------------
+
+    if operation == "correlation":
+
+        if second_image is None:
+
+            h, w = image.shape[:2]
+
+            crop_w = max(
+                20,
+                int(w * 0.30)
+            )
+
+            crop_h = max(
+                20,
+                int(h * 0.30)
+            )
+
+            x1 = max(
+                0,
+                w // 2 - crop_w // 2
+            )
+
+            y1 = max(
+                0,
+                h // 2 - crop_h // 2
+            )
+
+            template = image[
+                y1:y1 + crop_h,
+                x1:x1 + crop_w
+            ]
+
+        else:
+
+            template = second_image
+
+        gray_image = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        gray_template = cv2.cvtColor(
+            template,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        th, tw = gray_template.shape[:2]
+
+        ih, iw = gray_image.shape[:2]
+
+        if th >= ih or tw >= iw:
+
+            scale = min(
+                (iw - 2) / tw,
+                (ih - 2) / th
+            )
+
+            scale = max(
+                0.05,
+                scale
+            )
+
+            gray_template = cv2.resize(
+                gray_template,
+                None,
+                fx=scale,
+                fy=scale
+            )
+
+            th, tw = gray_template.shape[:2]
+
+        result_match = cv2.matchTemplate(
+            gray_image,
+            gray_template,
+            cv2.TM_CCOEFF_NORMED
+        )
+
+        _, max_value, _, max_location = cv2.minMaxLoc(
+            result_match
+        )
+
+        x, y = max_location
+
+        output = image.copy()
+
+        cv2.rectangle(
+            output,
+            (x, y),
+            (x + tw, y + th),
+            (255, 255, 255),
+            3
+        )
+
+        cv2.putText(
+            output,
+            f"Match: {max_value:.2f}",
+            (x, max(25, y - 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2
+        )
+
+        return output, (
+            f"Template matching completed. "
+            f"Correlation score={max_value:.3f}."
+        )
+
+    # --------------------------------------------------------
+    # POST LAB COLOR SPACES
+    # --------------------------------------------------------
+
+    if operation == "post_hsv":
+
+        hsv = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2HSV
+        )
+
+        result = cv2.cvtColor(
+            hsv,
+            cv2.COLOR_HSV2BGR
+        )
+
+        return result, "HSV color-space conversion completed."
+
+    if operation == "post_ycrcb":
+
+        ycrcb = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2YCrCb
+        )
+
+        result = cv2.cvtColor(
+            ycrcb,
+            cv2.COLOR_YCrCb2BGR
+        )
+
+        return result, "YCrCb color-space conversion completed."
+
+    if operation == "post_lab":
+
+        lab = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2LAB
+        )
+
+        result = cv2.cvtColor(
+            lab,
+            cv2.COLOR_LAB2BGR
+        )
+
+        return result, "Lab color-space conversion completed."
+
+    # --------------------------------------------------------
+    # CANNY
+    # --------------------------------------------------------
+
+    if operation == "post_canny":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        result = cv2.Canny(
+            gray,
+            100,
+            200
+        )
+
+        return result, "Canny edge detection completed."
+
+    # --------------------------------------------------------
+    # SOBEL
+    # --------------------------------------------------------
+
+    if operation == "post_sobel":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        sx = cv2.Sobel(
+            gray,
+            cv2.CV_64F,
+            1,
+            0,
+            ksize=3
+        )
+
+        sy = cv2.Sobel(
+            gray,
+            cv2.CV_64F,
+            0,
+            1,
+            ksize=3
+        )
+
+        magnitude = cv2.magnitude(
+            sx.astype(np.float32),
+            sy.astype(np.float32)
+        )
+
+        result = cv2.normalize(
+            magnitude,
+            None,
+            0,
+            255,
+            cv2.NORM_MINMAX
+        ).astype(np.uint8)
+
+        return result, "Sobel edge detection completed."
+
+    # --------------------------------------------------------
+    # PREWITT
+    # --------------------------------------------------------
+
+    if operation == "post_prewitt":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        kernel_x = np.array([
+            [-1, 0, 1],
+            [-1, 0, 1],
+            [-1, 0, 1]
+        ], dtype=np.float32)
+
+        kernel_y = np.array([
+            [-1, -1, -1],
+            [0, 0, 0],
+            [1, 1, 1]
+        ], dtype=np.float32)
+
+        px = cv2.filter2D(
+            gray,
+            cv2.CV_32F,
+            kernel_x
+        )
+
+        py = cv2.filter2D(
+            gray,
+            cv2.CV_32F,
+            kernel_y
+        )
+
+        magnitude = cv2.magnitude(
+            px,
+            py
+        )
+
+        result = cv2.normalize(
+            magnitude,
+            None,
+            0,
+            255,
+            cv2.NORM_MINMAX
+        ).astype(np.uint8)
+
+        return result, "Prewitt edge detection completed."
+
+    raise ValueError(
+        "Selected operation is not available."
+    )
+
+
+# ============================================================
+# HTML / CSS / JAVASCRIPT
+# ============================================================
+
+HTML = r"""
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width, initial-scale=1.0">
+
+<title>Image Processing Lab</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family:
+        Inter,
+        Segoe UI,
+        Arial,
+        sans-serif;
+
+    background:
+        radial-gradient(
+            circle at top left,
+            #172554 0,
+            #07111f 38%,
+            #020617 100%
+        );
+
+    color: #e5eefc;
+    min-height: 100vh;
+}
+
+/* ----------------------------------------------------------
+   TOP BAR
+---------------------------------------------------------- */
+
+.topbar {
+
+    height: 76px;
+
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+
+    padding: 0 28px;
+
+    background:
+        rgba(2, 6, 23, 0.85);
+
+    border-bottom:
+        1px solid rgba(148, 163, 184, 0.15);
+
+    backdrop-filter: blur(16px);
+
+    position: sticky;
+    top: 0;
+
+    z-index: 100;
+}
+
+.brand {
+
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.logo {
+
+    width: 44px;
+    height: 44px;
+
+    border-radius: 13px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background:
+        linear-gradient(
+            135deg,
+            #38bdf8,
+            #6366f1
+        );
+
+    box-shadow:
+        0 0 25px
+        rgba(56, 189, 248, 0.25);
+
+    font-size: 22px;
+}
+
+.brand h1 {
+
+    font-size: 18px;
+    letter-spacing: 0.3px;
+}
+
+.brand p {
+
+    font-size: 11px;
+    color: #94a3b8;
+    margin-top: 2px;
+}
+
+.status {
+
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    padding: 9px 13px;
+
+    border:
+        1px solid rgba(34, 197, 94, 0.25);
+
+    border-radius: 30px;
+
+    color: #bbf7d0;
+
+    background:
+        rgba(34, 197, 94, 0.08);
+
+    font-size: 12px;
+}
+
+.status-dot {
+
+    width: 8px;
+    height: 8px;
+
+    border-radius: 50%;
+
+    background: #22c55e;
+
+    box-shadow:
+        0 0 10px #22c55e;
+}
+
+
+/* ----------------------------------------------------------
+   MAIN LAYOUT
+---------------------------------------------------------- */
+
+.container {
+
+    width: min(1500px, 96%);
+    margin: auto;
+
+    padding: 28px 0 60px;
+}
+
+.hero {
+
+    padding: 24px 26px;
+    margin-bottom: 24px;
+
+    border:
+        1px solid rgba(148, 163, 184, 0.13);
+
+    border-radius: 20px;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(15, 23, 42, 0.92),
+            rgba(15, 23, 42, 0.68)
+        );
+
+    box-shadow:
+        0 20px 50px rgba(0, 0, 0, 0.25);
+}
+
+.hero h2 {
+
+    font-size: 29px;
+    margin-bottom: 7px;
+
+    background:
+        linear-gradient(
+            90deg,
+            #f8fafc,
+            #7dd3fc,
+            #a5b4fc
+        );
+
+    -webkit-background-clip: text;
+    color: transparent;
+}
+
+.hero p {
+
+    color: #94a3b8;
+    font-size: 14px;
+    line-height: 1.7;
+}
+
+.dashboard {
+
+    display: grid;
+
+    grid-template-columns:
+        310px
+        1fr;
+
+    gap: 20px;
+
+    align-items: start;
+}
+
+
+/* ----------------------------------------------------------
+   SIDEBAR
+---------------------------------------------------------- */
+
+.sidebar {
+
+    background:
+        rgba(15, 23, 42, 0.78);
+
+    border:
+        1px solid rgba(148, 163, 184, 0.12);
+
+    border-radius: 20px;
+
+    padding: 17px;
+
+    position: sticky;
+    top: 96px;
+
+    max-height: calc(100vh - 115px);
+
+    overflow-y: auto;
+}
+
+.sidebar-title {
+
+    color: #f8fafc;
+    font-weight: 700;
+    font-size: 14px;
+
+    margin-bottom: 13px;
+}
+
+.practical {
+
+    margin-bottom: 9px;
+}
+
+.practical-head {
+
+    width: 100%;
+
+    border: 0;
+
+    background:
+        rgba(30, 41, 59, 0.72);
+
+    color: #dbeafe;
+
+    padding: 13px;
+
+    border-radius: 12px;
+
+    cursor: pointer;
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    text-align: left;
+
+    transition: 0.2s;
+}
+
+.practical-head:hover {
+
+    background:
+        rgba(51, 65, 85, 0.85);
+
+    transform: translateY(-1px);
+}
+
+.practical-head strong {
+
+    font-size: 13px;
+}
+
+.practical-head small {
+
+    display: block;
+
+    color: #64748b;
+
+    font-size: 10px;
+
+    margin-top: 3px;
+}
+
+.arrow {
+
+    color: #64748b;
+}
+
+.operations {
+
+    display: none;
+
+    padding:
+        7px 0 4px 8px;
+}
+
+.operation-btn {
+
+    width: 100%;
+
+    border: 0;
+
+    margin-bottom: 4px;
+
+    padding: 9px 10px;
+
+    border-radius: 9px;
+
+    background: transparent;
+
+    color: #94a3b8;
+
+    text-align: left;
+
+    cursor: pointer;
+
+    font-size: 11px;
+
+    transition: 0.18s;
+}
+
+.operation-btn:hover {
+
+    background:
+        rgba(56, 189, 248, 0.08);
+
+    color: #e0f2fe;
+}
+
+.operation-btn.active {
+
+    background:
+        linear-gradient(
+            90deg,
+            rgba(14, 165, 233, 0.20),
+            rgba(99, 102, 241, 0.12)
+        );
+
+    color: #7dd3fc;
+
+    border-left:
+        2px solid #38bdf8;
+}
+
+.post-divider {
+
+    height: 1px;
+
+    background:
+        rgba(148, 163, 184, 0.12);
+
+    margin: 18px 0;
+}
+
+.post-title {
+
+    font-size: 12px;
+
+    font-weight: 700;
+
+    color: #f8fafc;
+
+    margin-bottom: 8px;
+}
+
+.post-btn {
+
+    width: 100%;
+
+    padding: 9px 10px;
+
+    margin-bottom: 4px;
+
+    border: 0;
+
+    border-radius: 9px;
+
+    background: transparent;
+
+    color: #94a3b8;
+
+    text-align: left;
+
+    cursor: pointer;
+
+    font-size: 11px;
+}
+
+.post-btn:hover,
+.post-btn.active {
+
+    background:
+        rgba(168, 85, 247, 0.12);
+
+    color: #d8b4fe;
+}
+
+
+/* ----------------------------------------------------------
+   WORKSPACE
+---------------------------------------------------------- */
+
+.workspace {
+
+    min-width: 0;
+}
+
+.control-card {
+
+    background:
+        rgba(15, 23, 42, 0.78);
+
+    border:
+        1px solid rgba(148, 163, 184, 0.12);
+
+    border-radius: 20px;
+
+    padding: 22px;
+
+    margin-bottom: 18px;
+}
+
+.section-heading {
+
+    display: flex;
+
+    align-items: center;
+
+    justify-content: space-between;
+
+    gap: 15px;
+
+    margin-bottom: 19px;
+}
+
+.section-heading h3 {
+
+    font-size: 17px;
+}
+
+.badge {
+
+    font-size: 10px;
+
+    padding: 6px 9px;
+
+    border-radius: 20px;
+
+    background:
+        rgba(56, 189, 248, 0.09);
+
+    border:
+        1px solid rgba(56, 189, 248, 0.15);
+
+    color: #7dd3fc;
+}
+
+
+/* ----------------------------------------------------------
+   FORM
+---------------------------------------------------------- */
+
+.form-grid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(2, 1fr);
+
+    gap: 15px;
+}
+
+.field {
+
+    display: flex;
+
+    flex-direction: column;
+
+    gap: 7px;
+}
+
+.field label {
+
+    font-size: 11px;
+
+    color: #94a3b8;
+
+    font-weight: 600;
+}
+
+.field input,
+.field select {
+
+    width: 100%;
+
+    padding: 11px 12px;
+
+    border-radius: 10px;
+
+    border:
+        1px solid rgba(148, 163, 184, 0.16);
+
+    background:
+        rgba(2, 6, 23, 0.55);
+
+    color: #e2e8f0;
+
+    outline: none;
+}
+
+.field input:focus,
+.field select:focus {
+
+    border-color: #38bdf8;
+
+    box-shadow:
+        0 0 0 3px
+        rgba(56, 189, 248, 0.08);
+}
+
+.upload-area {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 15px;
+
+    margin-bottom: 17px;
+}
+
+.upload-box {
+
+    padding: 18px;
+
+    border-radius: 15px;
+
+    border:
+        1px dashed rgba(125, 211, 252, 0.25);
+
+    background:
+        rgba(14, 165, 233, 0.035);
+}
+
+.upload-box h4 {
+
+    font-size: 12px;
+    margin-bottom: 7px;
+}
+
+.upload-box p {
+
+    font-size: 10px;
+    color: #64748b;
+    margin-bottom: 12px;
+}
+
+input[type="file"] {
+
+    width: 100%;
+
+    color: #94a3b8;
+
+    font-size: 11px;
+}
+
+.parameters {
+
+    margin-top: 16px;
+
+    padding: 16px;
+
+    border-radius: 14px;
+
+    background:
+        rgba(2, 6, 23, 0.36);
+
+    border:
+        1px solid rgba(148, 163, 184, 0.09);
+}
+
+.parameters h4 {
+
+    font-size: 12px;
+
+    margin-bottom: 12px;
+
+    color: #cbd5e1;
+}
+
+.process-button {
+
+    width: 100%;
+
+    border: 0;
+
+    padding: 14px;
+
+    margin-top: 18px;
+
+    border-radius: 12px;
+
+    cursor: pointer;
+
+    font-size: 13px;
+
+    font-weight: 800;
+
+    color: white;
+
+    background:
+        linear-gradient(
+            100deg,
+            #0284c7,
+            #4f46e5
+        );
+
+    box-shadow:
+        0 12px 25px
+        rgba(37, 99, 235, 0.18);
+
+    transition: 0.2s;
+}
+
+.process-button:hover {
+
+    transform: translateY(-2px);
+
+    box-shadow:
+        0 16px 30px
+        rgba(37, 99, 235, 0.28);
+}
+
+
+/* ----------------------------------------------------------
+   INFORMATION CARD
+---------------------------------------------------------- */
+
+.info-card {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 15px;
+
+    margin-bottom: 18px;
+}
+
+.info-box {
+
+    padding: 17px;
+
+    border-radius: 15px;
+
+    background:
+        rgba(15, 23, 42, 0.72);
+
+    border:
+        1px solid rgba(148, 163, 184, 0.11);
+}
+
+.info-box h4 {
+
+    font-size: 12px;
+    margin-bottom: 8px;
+}
+
+.info-box p {
+
+    color: #94a3b8;
+
+    font-size: 11px;
+
+    line-height: 1.7;
+}
+
+
+/* ----------------------------------------------------------
+   OUTPUT
+---------------------------------------------------------- */
+
+.output-card {
+
+    background:
+        rgba(15, 23, 42, 0.85);
+
+    border:
+        1px solid rgba(56, 189, 248, 0.16);
+
+    border-radius: 20px;
+
+    padding: 22px;
+
+    margin-top: 20px;
+}
+
+.output-image-wrap {
+
+    display: grid;
+
+    grid-template-columns:
+        minmax(0, 1fr)
+        270px;
+
+    gap: 18px;
+
+    align-items: start;
+}
+
+.image-panel {
+
+    min-height: 360px;
+
+    border-radius: 15px;
+
+    background:
+        rgba(2, 6, 23, 0.65);
+
+    border:
+        1px solid rgba(148, 163, 184, 0.10);
+
+    display: flex;
+
+    justify-content: center;
+
+    align-items: center;
+
+    padding: 15px;
+
+    overflow: hidden;
+}
+
+.image-panel img {
+
+    max-width: 100%;
+
+    max-height: 580px;
+
+    object-fit: contain;
+
+    border-radius: 10px;
+}
+
+.no-image {
+
+    text-align: center;
+
+    color: #64748b;
+
+    font-size: 12px;
+
+    line-height: 1.7;
+}
+
+.stats {
+
+    display: grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    gap: 9px;
+
+    margin-top: 15px;
+}
+
+.stat {
+
+    padding: 11px;
+
+    border-radius: 10px;
+
+    background:
+        rgba(2, 6, 23, 0.45);
+
+    border:
+        1px solid rgba(148, 163, 184, 0.08);
+}
+
+.stat span {
+
+    display: block;
+
+    font-size: 9px;
+
+    color: #64748b;
+
+    margin-bottom: 4px;
+}
+
+.stat strong {
+
+    font-size: 12px;
+
+    color: #cbd5e1;
+}
+
+.result-message {
+
+    margin-top: 14px;
+
+    padding: 12px;
+
+    border-radius: 10px;
+
+    background:
+        rgba(34, 197, 94, 0.07);
+
+    border:
+        1px solid rgba(34, 197, 94, 0.14);
+
+    color: #bbf7d0;
+
+    font-size: 11px;
+
+    line-height: 1.6;
+}
+
+.error {
+
+    margin-bottom: 15px;
+
+    padding: 13px;
+
+    border-radius: 11px;
+
+    background:
+        rgba(239, 68, 68, 0.09);
+
+    border:
+        1px solid rgba(239, 68, 68, 0.20);
+
+    color: #fecaca;
+
+    font-size: 12px;
+}
+
+.download {
+
+    display: inline-block;
+
+    width: 100%;
+
+    text-align: center;
+
+    margin-top: 12px;
+
+    padding: 11px;
+
+    border-radius: 10px;
+
+    text-decoration: none;
+
+    color: #e0f2fe;
+
+    background:
+        rgba(14, 165, 233, 0.12);
+
+    border:
+        1px solid rgba(14, 165, 233, 0.18);
+
+    font-size: 11px;
+
+    font-weight: 700;
+}
+
+
+/* ----------------------------------------------------------
+   POST LAB
+---------------------------------------------------------- */
+
+.post-lab {
+
+    margin-top: 30px;
+
+    padding: 23px;
+
+    border-radius: 20px;
+
+    background:
+        linear-gradient(
+            135deg,
+            rgba(76, 29, 149, 0.16),
+            rgba(15, 23, 42, 0.82)
+        );
+
+    border:
+        1px solid rgba(168, 85, 247, 0.18);
+}
+
+.post-lab h3 {
+
+    font-size: 18px;
+    margin-bottom: 7px;
+}
+
+.post-lab > p {
+
+    color: #94a3b8;
+
+    font-size: 11px;
+
+    line-height: 1.7;
+
+    margin-bottom: 17px;
+}
+
+.post-grid {
+
+    display: grid;
+
+    grid-template-columns:
+        repeat(3, 1fr);
+
+    gap: 12px;
+}
+
+.post-card {
+
+    padding: 15px;
+
+    border-radius: 13px;
+
+    background:
+        rgba(2, 6, 23, 0.45);
+
+    border:
+        1px solid rgba(168, 85, 247, 0.12);
+
+    cursor: pointer;
+
+    transition: 0.2s;
+}
+
+.post-card:hover {
+
+    transform: translateY(-2px);
+
+    border-color:
+        rgba(168, 85, 247, 0.35);
+}
+
+.post-card h4 {
+
+    font-size: 12px;
+
+    margin-bottom: 5px;
+}
+
+.post-card p {
+
+    font-size: 10px;
+
+    color: #64748b;
+
+    line-height: 1.5;
+}
+
+
+/* ----------------------------------------------------------
+   FOOTER
+---------------------------------------------------------- */
+
+footer {
+
+    margin-top: 35px;
+
+    padding: 20px;
+
+    text-align: center;
+
+    color: #475569;
+
+    font-size: 10px;
+
+    border-top:
+        1px solid rgba(148, 163, 184, 0.08);
+}
+
+
+/* ----------------------------------------------------------
+   RESPONSIVE
+---------------------------------------------------------- */
+
+@media(max-width: 1000px) {
+
+    .dashboard {
+
+        grid-template-columns: 1fr;
+    }
+
+    .sidebar {
+
+        position: static;
+
+        max-height: none;
+    }
+
+    .operations {
+
+        display: block;
+    }
+
+    .output-image-wrap {
+
+        grid-template-columns: 1fr;
+    }
+}
+
+@media(max-width: 700px) {
+
+    .form-grid,
+    .upload-area,
+    .info-card,
+    .post-grid {
+
+        grid-template-columns: 1fr;
+    }
+
+    .topbar {
+
+        padding: 0 15px;
+    }
+
+    .brand p {
+
+        display: none;
+    }
+
+    .hero h2 {
+
+        font-size: 22px;
+    }
+
+    .container {
+
+        width: 94%;
+    }
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+<!-- ========================================================
+     TOP BAR
+========================================================= -->
+
+<header class="topbar">
+
+    <div class="brand">
+
+        <div class="logo">
+            ⚙
+        </div>
+
+        <div>
+            <h1>Image Processing Lab</h1>
+            <p>Computer Vision • OpenCV • Practical Workspace</p>
+        </div>
+
+    </div>
+
+    <div class="status">
+
+        <span class="status-dot"></span>
+
+        System Ready
+
+    </div>
+
+</header>
+
+
+<!-- ========================================================
+     MAIN CONTAINER
+========================================================= -->
+
+<main class="container">
+
+    <section class="hero">
+
+        <h2>Interactive Image Processing Laboratory</h2>
+
+        <p>
+            Select a practical, upload your image, choose the required
+            image-processing operation and process the result directly
+            on this webpage. The complete practical workflow is
+            implemented using Python, Flask, OpenCV and NumPy.
+        </p>
+
+    </section>
+
+
+    <div class="dashboard">
+
+
+        <!-- =================================================
+             SIDEBAR
+        ================================================== -->
+
+        <aside class="sidebar">
+
+            <div class="sidebar-title">
+                Practical Modules
+            </div>
+
+
+            {% for practical in practicals %}
+
+            <div class="practical">
+
+                <button
+                    class="practical-head"
+                    onclick="togglePractical('{{ practical.id }}')">
+
+                    <div>
+
+                        <strong>
+                            {{ practical.title }}
+                        </strong>
+
+                        <small>
+                            {{ practical.subtitle }}
+                        </small>
+
+                    </div>
+
+                    <span class="arrow">
+                        ›
+                    </span>
+
+                </button>
+
+
+                <div
+                    class="operations"
+                    id="ops-{{ practical.id }}">
+
+                    {% for op_id, op_name in practical.operations %}
+
+                    <button
+                        type="button"
+                        class="operation-btn"
+                        data-operation="{{ op_id }}"
+                        onclick="selectOperation('{{ op_id }}', this)">
+
+                        {{ op_name }}
+
+                    </button>
+
+                    {% endfor %}
+
+                </div>
+
+            </div>
+
+            {% endfor %}
+
+
+            <div class="post-divider"></div>
+
+
+            <div class="post-title">
+                Post Lab Experiments
+            </div>
+
+            {% for op_id, op_name in post_labs %}
+
+            <button
+                type="button"
+                class="post-btn"
+                data-operation="{{ op_id }}"
+                onclick="selectPostOperation('{{ op_id }}', this)">
+
+                {{ op_name }}
+
+            </button>
+
+            {% endfor %}
+
+        </aside>
+
+
+        <!-- =================================================
+             WORKSPACE
+        ================================================== -->
+
+        <section class="workspace">
+
+
+            {% if error_message %}
+
+            <div class="error">
+                ⚠ {{ error_message }}
+            </div>
+
+            {% endif %}
+
+
+            <!-- OPERATION CARD -->
+
+            <form
+                method="POST"
+                action="{{ url_for('process') }}"
+                enctype="multipart/form-data">
+
+                <input
+                    type="hidden"
+                    name="operation"
+                    id="operationInput"
+                    value="{{ selected_operation or 'rgb' }}">
+
+
+                <div class="control-card">
+
+                    <div class="section-heading">
+
+                        <div>
+
+                            <h3 id="operationTitle">
+                                RGB Image
+                            </h3>
+
+                        </div>
+
+                        <span
+                            class="badge"
+                            id="operationBadge">
+
+                            Practical 02
+
+                        </span>
+
+                    </div>
+
+
+                    <!-- UPLOAD -->
+
+                    <div class="upload-area">
+
+
+                        <div class="upload-box">
+
+                            <h4>
+                                📷 Primary Image
+                            </h4>
+
+                            <p>
+                                Upload the main image on which
+                                the selected operation will run.
+                            </p>
+
+                            <input
+                                type="file"
+                                name="image"
+                                accept="image/*"
+                                required>
+
+                        </div>
+
+
+                        <div
+                            class="upload-box"
+                            id="secondUpload">
+
+                            <h4>
+                                🖼 Secondary Image
+                            </h4>
+
+                            <p>
+                                Required for image arithmetic,
+                                bitwise and template matching.
+                            </p>
+
+                            <input
+                                type="file"
+                                name="second_image"
+                                accept="image/*">
+
+                        </div>
+
+                    </div>
+
+
+                    <!-- PARAMETERS -->
+
+                    <div class="parameters">
+
+                        <h4>
+                            ⚙ Operation Parameters
+                        </h4>
+
+                        <div class="form-grid">
+
+
+                            <div class="field">
+
+                                <label>
+                                    Translation X
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="tx"
+                                    value="100">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Translation Y
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="ty"
+                                    value="50">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Rotation Angle
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="angle"
+                                    value="30"
+                                    step="0.1">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Scaling Factor
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="scale"
+                                    value="0.6"
+                                    step="0.1"
+                                    min="0.1"
+                                    max="3">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Shearing Factor
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="shear"
+                                    value="0.3"
+                                    step="0.1">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Brightness / Beta
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="beta"
+                                    value="10">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Contrast / Alpha
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="alpha"
+                                    value="2.3"
+                                    step="0.1">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    Threshold
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="threshold"
+                                    value="127"
+                                    min="0"
+                                    max="255">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    JPEG Quality
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="jpeg_quality"
+                                    value="30"
+                                    min="1"
+                                    max="100">
+
+                            </div>
+
+
+                            <div class="field">
+
+                                <label>
+                                    PNG Compression
+                                </label>
+
+                                <input
+                                    type="number"
+                                    name="png_compression"
+                                    value="9"
+                                    min="0"
+                                    max="9">
+
+                            </div>
+
+                        </div>
+
+                    </div>
+
+
+                    <button
+                        class="process-button"
+                        type="submit">
+
+                        🚀 Process Image
+
+                    </button>
+
+                </div>
+
+            </form>
+
+
+            <!-- OPERATION INFORMATION -->
+
+            <div class="info-card">
+
+                <div class="info-box">
+
+                    <h4>
+                        📘 About Selected Operation
+                    </h4>
+
+                    <p id="operationInfo">
+                        {{ operation_info or OP_INFO["rgb"] }}
+                    </p>
+
+                </div>
+
+
+                <div class="info-box">
+
+                    <h4>
+                        💡 Processing Pipeline
+                    </h4>
+
+                    <p>
+                        Image Upload →
+                        Image Decoding →
+                        Selected Algorithm →
+                        OpenCV Processing →
+                        Result Generation →
+                        Same-Page Display
+                    </p>
+
+                </div>
+
+            </div>
+
+
+            <!-- =================================================
+                 SAME PAGE OUTPUT
+            ================================================== -->
+
+            <section class="output-card">
+
+                <div class="section-heading">
+
+                    <div>
+
+                        <h3>
+                            Processing Output
+                        </h3>
+
+                    </div>
+
+                    <span class="badge">
+                        Live Result
+                    </span>
+
+                </div>
+
+
+                <div class="output-image-wrap">
+
+
+                    <div class="image-panel">
+
+                        {% if output_image %}
+
+                        <img
+                            src="data:image/png;base64,{{ output_image }}"
+                            alt="Processed Image">
+
+                        {% else %}
+
+                        <div class="no-image">
+
+                            <div style="font-size:40px; margin-bottom:10px;">
+                                🖼
+                            </div>
+
+                            Your processed image will
+                            appear here after clicking
+                            <b>Process Image</b>.
+
+                        </div>
+
+                        {% endif %}
+
+                    </div>
+
+
+                    <div>
+
+                        <div class="info-box">
+
+                            <h4>
+                                Result Information
+                            </h4>
+
+                            <p>
+                                Selected operation:
+                                <br>
+
+                                <strong>
+                                    {{ selected_operation_name or "RGB Image" }}
+                                </strong>
+                            </p>
+
+                            {% if processing_message %}
+
+                            <div class="result-message">
+
+                                ✓ {{ processing_message }}
+
+                            </div>
+
+                            {% endif %}
+
+                        </div>
+
+
+                        {% if statistics %}
+
+                        <div class="stats">
+
+                            <div class="stat">
+                                <span>Width</span>
+                                <strong>
+                                    {{ statistics.width }} px
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Height</span>
+                                <strong>
+                                    {{ statistics.height }} px
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Channels</span>
+                                <strong>
+                                    {{ statistics.channels }}
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Pixels</span>
+                                <strong>
+                                    {{ statistics.pixels }}
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Minimum</span>
+                                <strong>
+                                    {{ statistics.minimum }}
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Maximum</span>
+                                <strong>
+                                    {{ statistics.maximum }}
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Mean</span>
+                                <strong>
+                                    {{ statistics.mean }}
+                                </strong>
+                            </div>
+
+                            <div class="stat">
+                                <span>Data Type</span>
+                                <strong>
+                                    {{ statistics.dtype }}
+                                </strong>
+                            </div>
+
+                        </div>
+
+                        {% endif %}
+
+
+                        {% if output_image %}
+
+                        <a
+                            class="download"
+                            href="data:image/png;base64,{{ output_image }}"
+                            download="processed_image.png">
+
+                            ⬇ Save Processed Image
+
+                        </a>
+
+                        {% endif %}
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- =================================================
+                 POST LAB - AT THE END
+            ================================================== -->
+
+            <section class="post-lab">
+
+                <h3>
+                    🧪 Post Lab Experiments
+                </h3>
+
+                <p>
+                    These additional experiments extend the practical
+                    work with colour-space conversion and edge
+                    detection techniques. Select an experiment to
+                    load it into the processing workspace.
+                </p>
+
+
+                <div class="post-grid">
+
+                    <div
+                        class="post-card"
+                        onclick="selectPostOperation('post_hsv')">
+
+                        <h4>
+                            HSV Color Space
+                        </h4>
+
+                        <p>
+                            Represents images using Hue,
+                            Saturation and Value.
+                        </p>
+
+                    </div>
+
+
+                    <div
+                        class="post-card"
+                        onclick="selectPostOperation('post_ycrcb')">
+
+                        <h4>
+                            YCrCb Color Space
+                        </h4>
+
+                        <p>
+                            Separates luminance from
+                            chrominance components.
+                        </p>
+
+                    </div>
+
+
+                    <div
+                        class="post-card"
+                        onclick="selectPostOperation('post_lab')">
+
+                        <h4>
+                            Lab Color Space
+                        </h4>
+
+                        <p>
+                            Represents lightness and
+                            colour information separately.
+                        </p>
+
+                    </div>
+
+
+                    <div
+                        class="post-card"
+                        onclick="selectPostOperation('post_canny')">
+
+                        <h4>
+                            Canny Edge Detection
+                        </h4>
+
+                        <p>
+                            Detects important edges using
+                            gradient-based processing.
+                        </p>
+
+                    </div>
+
+
+                    <div
+                        class="post-card"
+                        onclick="selectPostOperation('post_sobel')">
+
+                        <h4>
+                            Sobel Edge Detection
+                        </h4>
+
+                        <p>
+                            Calculates image gradients
+                            in X and Y directions.
+                        </p>
+
+                    </div>
+
+
+                    <div
+                        class="post-card"
+                        onclick="selectPostOperation('post_prewitt')">
+
+                        <h4>
+                            Prewitt Edge Detection
+                        </h4>
+
+                        <p>
+                            Uses Prewitt kernels to
+                            identify image edges.
+                        </p>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+        </section>
+
+    </div>
+
+
+    <footer>
+
+        Image Processing Laboratory |
+        Python + Flask + OpenCV + NumPy |
+        Academic Practical Project
+
+    </footer>
+
+</main>
+
+
+<script>
+
+/* ==========================================================
+   OPERATION INFORMATION
+========================================================== */
+
+const operationInfo = {{ op_info | tojson }};
+
+
+/* ==========================================================
+   OPERATION NAMES
+========================================================== */
+
+const operationNames = {
+
+    rgb: "RGB Image",
+    gray: "Grayscale",
+    binary: "Binary",
+
+    addition: "Image Addition",
+    subtraction: "Image Subtraction",
+    multiplication: "Image Multiplication",
+
+    bitwise_and: "Bitwise AND",
+    bitwise_or: "Bitwise OR",
+    bitwise_xor: "Bitwise XOR",
+    bitwise_not: "Bitwise NOT",
+
+    translation: "Translation",
+    rotation: "Rotation",
+    scaling: "Scaling",
+
+    shear_x: "X Shearing",
+    shear_y: "Y Shearing",
+
+    reflect_x: "X Reflection",
+    reflect_y: "Y Reflection",
+
+    crop: "Cropping",
+
+    negative: "Negative",
+    brightness: "Brightness & Contrast",
+    laplacian: "Laplacian Sharpening",
+    histogram: "Histogram Equalization",
+
+    threshold_binary: "Binary Threshold",
+    threshold_inverse: "Inverse Threshold",
+    threshold_trunc: "Truncate Threshold",
+    threshold_zero: "To Zero Threshold",
+    threshold_zi: "To Zero Inverted",
+
+    average: "Averaging Filter",
+    gaussian: "Gaussian Filter",
+    median: "Median Filter",
+    bilateral: "Bilateral Filter",
+
+    gaussian_noise: "Gaussian Noise Removal",
+    sp_noise: "Salt & Pepper Removal",
+    nlm: "Non-Local Means",
+
+    telea: "Telea Inpainting",
+    ns: "Navier-Stokes Inpainting",
+
+    jpeg: "JPEG Compression",
+    png: "PNG Compression",
+    rle: "Run Length Encoding",
+    lzw: "LZW Compression",
+
+    erosion: "Erosion",
+    dilation: "Dilation",
+    opening: "Opening",
+    closing: "Closing",
+
+    correlation: "Correlation / Template Matching",
+
+    post_hsv: "HSV Color Space",
+    post_ycrcb: "YCrCb Color Space",
+    post_lab: "Lab Color Space",
+
+    post_canny: "Canny Edge Detection",
+    post_sobel: "Sobel Edge Detection",
+    post_prewitt: "Prewitt Edge Detection"
+};
+
+
+/* ==========================================================
+   PRACTICAL TOGGLE
+========================================================== */
+
+function togglePractical(id) {
+
+    const element =
+        document.getElementById("ops-" + id);
+
+    if (!element) {
+        return;
+    }
+
+    if (element.style.display === "block") {
+
+        element.style.display = "none";
+
+    } else {
+
+        element.style.display = "block";
+
+    }
+}
+
+
+/* ==========================================================
+   SELECT OPERATION
+========================================================== */
+
+function selectOperation(id, button) {
+
+    document
+        .querySelectorAll(".operation-btn")
+        .forEach(function(btn) {
+
+            btn.classList.remove("active");
+
+        });
+
+
+    document
+        .querySelectorAll(".post-btn")
+        .forEach(function(btn) {
+
+            btn.classList.remove("active");
+
+        });
+
+
+    if (button) {
+        button.classList.add("active");
+    }
+
+
+    document.getElementById(
+        "operationInput"
+    ).value = id;
+
+
+    document.getElementById(
+        "operationTitle"
+    ).innerText =
+        operationNames[id] || id;
+
+
+    document.getElementById(
+        "operationInfo"
+    ).innerText =
+        operationInfo[id] || "";
+
+
+    if (id.startsWith("post_")) {
+
+        document.getElementById(
+            "operationBadge"
+        ).innerText = "Post Lab";
+
+    } else {
+
+        let badge = "Practical";
+
+        if (
+            [
+                "rgb",
+                "gray",
+                "binary",
+                "addition",
+                "subtraction",
+                "multiplication",
+                "bitwise_and",
+                "bitwise_or",
+                "bitwise_xor",
+                "bitwise_not"
+            ].includes(id)
+        ) {
+            badge = "Practical 02";
+        }
+
+        else if (
+            [
+                "translation",
+                "rotation",
+                "scaling",
+                "shear_x",
+                "shear_y",
+                "reflect_x",
+                "reflect_y",
+                "crop"
+            ].includes(id)
+        ) {
+            badge = "Practical 03";
+        }
+
+        else if (
+            [
+                "negative",
+                "brightness",
+                "laplacian",
+                "histogram",
+                "threshold_binary",
+                "threshold_inverse",
+                "threshold_trunc",
+                "threshold_zero",
+                "threshold_zi"
+            ].includes(id)
+        ) {
+            badge = "Practical 04";
+        }
+
+        else if (
+            [
+                "average",
+                "gaussian",
+                "median",
+                "bilateral"
+            ].includes(id)
+        ) {
+            badge = "Practical 05";
+        }
+
+        else if (
+            [
+                "gaussian_noise",
+                "sp_noise",
+                "nlm",
+                "telea",
+                "ns"
+            ].includes(id)
+        ) {
+            badge = "Practical 06";
+        }
+
+        else if (
+            [
+                "jpeg",
+                "png",
+                "rle",
+                "lzw"
+            ].includes(id)
+        ) {
+            badge = "Practical 07";
+        }
+
+        else if (
+            [
+                "erosion",
+                "dilation",
+                "opening",
+                "closing"
+            ].includes(id)
+        ) {
+            badge = "Practical 08";
+        }
+
+        else if (
+            id === "correlation"
+        ) {
+            badge = "Practical 09";
+        }
+
+        document.getElementById(
+            "operationBadge"
+        ).innerText = badge;
+    }
+
+
+    updateSecondUpload(id);
+}
+
+
+/* ==========================================================
+   POST LAB OPERATION
+========================================================== */
+
+function selectPostOperation(id, button) {
+
+    document
+        .querySelectorAll(".operation-btn")
+        .forEach(function(btn) {
+
+            btn.classList.remove("active");
+
+        });
+
+
+    document
+        .querySelectorAll(".post-btn")
+        .forEach(function(btn) {
+
+            btn.classList.remove("active");
+
+        });
+
+
+    if (button) {
+
+        button.classList.add("active");
+
+    } else {
+
+        document
+            .querySelectorAll(
+                '.post-btn[data-operation="' + id + '"]'
+            )
+            .forEach(function(btn) {
+
+                btn.classList.add("active");
+
+            });
+
+    }
+
+
+    document.getElementById(
+        "operationInput"
+    ).value = id;
+
+
+    document.getElementById(
+        "operationTitle"
+    ).innerText =
+        operationNames[id];
+
+
+    document.getElementById(
+        "operationBadge"
+    ).innerText =
+        "Post Lab";
+
+
+    document.getElementById(
+        "operationInfo"
+    ).innerText =
+        operationInfo[id];
+
+
+    updateSecondUpload(id);
+
+
+    window.scrollTo({
+        top: 0,
+        behavior: "smooth"
+    });
+}
+
+
+/* ==========================================================
+   SECOND IMAGE VISIBILITY
+========================================================== */
+
+function updateSecondUpload(id) {
+
+    const second =
+        document.getElementById("secondUpload");
+
+
+    const needsSecond = [
+
+        "addition",
+        "subtraction",
+        "multiplication",
+        "bitwise_and",
+        "bitwise_or",
+        "bitwise_xor",
+        "correlation"
+
+    ].includes(id);
+
+
+    if (needsSecond) {
+
+        second.style.opacity = "1";
+
+    } else {
+
+        second.style.opacity = "0.65";
+
+    }
+}
+
+
+/* ==========================================================
+   INITIALIZE SELECTED OPERATION
+========================================================== */
+
+window.addEventListener(
+    "DOMContentLoaded",
+    function() {
+
+        const selected =
+            "{{ selected_operation or 'rgb' }}";
+
+
+        const button =
+            document.querySelector(
+                '.operation-btn[data-operation="' +
+                selected +
+                '"]'
+            );
+
+
+        if (button) {
+
+            const parent =
+                button.closest(".operations");
+
+            if (parent) {
+
+                parent.style.display = "block";
+
+            }
+
+            selectOperation(
+                selected,
+                button
+            );
+
+        } else if (
+            selected.startsWith("post_")
+        ) {
+
+            selectPostOperation(
+                selected
+            );
+
+        } else {
+
+            selectOperation(
+                "rgb",
+                null
+            );
+
+        }
+
+    }
+);
+
+</script>
+
+</body>
+
+</html>
+"""
+
+
+# ============================================================
+# ROUTES
+# ============================================================
+
+@app.route("/")
+def home():
+    return redirect(url_for("index"))
+
+
+@app.route("/lab")
+def index():
+
+    return render_template_string(
+        HTML,
+
+        practicals=PRACTICALS,
+
+        post_labs=POST_LABS,
+
+        op_info=OP_INFO,
+
+        selected_operation="rgb",
+
+        selected_operation_name="RGB Image",
+
+        operation_info=OP_INFO["rgb"],
+
+        output_image=None,
+
+        statistics=None,
+
+        processing_message=None,
+
+        error_message=None
+    )
+
+
+@app.route("/process", methods=["POST"])
+def process():
+
+    start_time = time.perf_counter()
+
+    operation = request.form.get(
+        "operation",
+        "rgb"
+    )
+
+    selected_name = operation
+
+    for practical in PRACTICALS:
+
+        for op_id, op_name in practical["operations"]:
+
+            if op_id == operation:
+
+                selected_name = op_name
+
+    for op_id, op_name in POST_LABS:
+
+        if op_id == operation:
+
+            selected_name = op_name
+
+
+    try:
+
+        image = read_uploaded_image(
+            request.files.get("image")
+        )
+
+
+        second_image = None
+
+        if request.files.get("second_image"):
+
+            second_file = request.files.get(
+                "second_image"
+            )
+
+            if second_file.filename:
+
+                second_image = read_uploaded_image(
+                    second_file
+                )
+
+
+        result, message = process_image(
+            image,
+            operation,
+            request.form,
+            second_image
+        )
+
+
+        elapsed = time.perf_counter() - start_time
+
+        output_base64 = image_to_base64(
+            result
+        )
+
+        statistics = calculate_statistics(
+            result
+        )
+
+        message = (
+            message +
+            f" Processing time: {elapsed:.3f} seconds."
+        )
+
+
+        return render_template_string(
+
+            HTML,
+
+            practicals=PRACTICALS,
+
+            post_labs=POST_LABS,
+
+            op_info=OP_INFO,
+
+            selected_operation=operation,
+
+            selected_operation_name=selected_name,
+
+            operation_info=OP_INFO.get(
+                operation,
+                "Image processing operation."
+            ),
+
+            output_image=output_base64,
+
+            statistics=statistics,
+
+            processing_message=message,
+
+            error_message=None
+        )
+
+
+    except Exception as error:
+
+        elapsed = time.perf_counter() - start_time
+
+        return render_template_string(
+
+            HTML,
+
+            practicals=PRACTICALS,
+
+            post_labs=POST_LABS,
+
+            op_info=OP_INFO,
+
+            selected_operation=operation,
+
+            selected_operation_name=selected_name,
+
+            operation_info=OP_INFO.get(
+                operation,
+                "Image processing operation."
+            ),
+
+            output_image=None,
+
+            statistics=None,
+
+            processing_message=(
+                f"Processing time: {elapsed:.3f} seconds."
+            ),
+
+            error_message=str(error)
+        )
+
+
+# ============================================================
+# ERROR HANDLERS
+# ============================================================
+
+@app.errorhandler(413)
+def file_too_large(error):
+
+    return render_template_string(
+
+        HTML,
+
+        practicals=PRACTICALS,
+
+        post_labs=POST_LABS,
+
+        op_info=OP_INFO,
+
+        selected_operation="rgb",
+
+        selected_operation_name="RGB Image",
+
+        operation_info=OP_INFO["rgb"],
+
+        output_image=None,
+
+        statistics=None,
+
+        processing_message=None,
+
+        error_message=(
+            "Uploaded file is too large. "
+            "Maximum allowed size is 12 MB."
+        )
+    ), 413
+
+
+@app.errorhandler(404)
+def page_not_found(error):
+
+    return redirect(
+        url_for("index")
+    )
+
+
+# ============================================================
+# APPLICATION START
+# ============================================================
+
+if __name__ == "__main__":
+
+    print("=" * 60)
+    print("IMAGE PROCESSING LAB")
+    print("=" * 60)
+    print("Website starting...")
+    print("Open: http://127.0.0.1:5000")
+    print("=" * 60)
+
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=True
+    )
