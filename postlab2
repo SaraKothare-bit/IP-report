@@ -1,0 +1,138 @@
+import cv2
+import matplotlib.pyplot as plt
+
+# -------------------------------
+# 1. Convert Colour Image to Grayscale
+# -------------------------------
+
+img = cv2.imread('color.png')
+
+gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+plt.imshow(gray, cmap='gray')
+plt.title('Grayscale Image')
+plt.axis('off')
+plt.show()
+
+
+# -------------------------------
+# 2. RGB Channel Separation
+# -------------------------------
+
+img = cv2.imread('cspace.png')
+
+# Convert BGR to RGB
+rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+
+R = rgb[:, :, 0]
+G = rgb[:, :, 1]
+B = rgb[:, :, 2]
+
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 3, 1)
+plt.imshow(R, cmap='Reds')
+plt.title('Red Channel')
+plt.axis('off')
+
+plt.subplot(1, 3, 2)
+plt.imshow(G, cmap='Greens')
+plt.title('Green Channel')
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(B, cmap='Blues')
+plt.title('Blue Channel')
+plt.axis('off')
+
+plt.show()
+
+
+# -------------------------------
+# 3. YCrCb Colour Space
+# -------------------------------
+
+img = cv2.imread('color2.png')
+
+ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
+
+Y, Cr, Cb = cv2.split(ycrcb)
+
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 3, 1)
+plt.imshow(Y, cmap='gray')
+plt.title('Y - Luminance')
+plt.axis('off')
+
+plt.subplot(1, 3, 2)
+plt.imshow(Cr, cmap='gray')
+plt.title('Cr - Red Difference')
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(Cb, cmap='gray')
+plt.title('Cb - Blue Difference')
+plt.axis('off')
+
+plt.show()
+
+
+# -------------------------------
+# 4. HSV Colour Space
+# -------------------------------
+
+img = cv2.imread('color2.png')
+
+hsv = cv2.cvtColor(img, cv2.COLOR_BGR2HSV)
+
+H, S, V = cv2.split(hsv)
+
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 3, 1)
+plt.imshow(H, cmap='gray')
+plt.title('Hue')
+plt.axis('off')
+
+plt.subplot(1, 3, 2)
+plt.imshow(S, cmap='gray')
+plt.title('Saturation')
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(V, cmap='gray')
+plt.title('Value')
+plt.axis('off')
+
+plt.show()
+
+
+# -------------------------------
+# 5. LAB Colour Space
+# -------------------------------
+
+image = cv2.imread('color2.png')
+
+lab = cv2.cvtColor(image, cv2.COLOR_BGR2LAB)
+
+L, A, B = cv2.split(lab)
+
+plt.figure(figsize=(12, 4))
+
+plt.subplot(1, 3, 1)
+plt.imshow(L, cmap='gray')
+plt.title('L - Lightness')
+plt.axis('off')
+
+plt.subplot(1, 3, 2)
+plt.imshow(A, cmap='gray')
+plt.title('A Channel')
+plt.axis('off')
+
+plt.subplot(1, 3, 3)
+plt.imshow(B, cmap='gray')
+plt.title('B Channel')
+plt.axis('off')
+
+plt.show()
