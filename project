@@ -1,0 +1,2265 @@
+import base64
+from flask import Flask, request, render_template_string, jsonify
+import cv2
+import numpy as np
+
+app = Flask(__name__)
+app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
+
+# ============================================================
+# FRONTEND: HTML + CSS + JAVASCRIPT
+# Everything is inside this Python file
+# ============================================================
+
+HTML = r'''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>Image Processing Lab Studio</title>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    font-family: Arial, Helvetica, sans-serif;
+    background: #f4f7fb;
+    color: #172033;
+}
+
+header {
+    background: linear-gradient(135deg, #123b72, #1769aa);
+    color: white;
+    padding: 28px 5%;
+    box-shadow: 0 4px 15px #0002;
+}
+
+header h1 {
+    margin: 0 0 7px;
+    font-size: 30px;
+}
+
+header p {
+    margin: 0;
+    opacity: .9;
+}
+
+.wrap {
+    max-width: 1400px;
+    margin: 24px auto;
+    padding: 0 18px;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 20px;
+}
+
+.card {
+    background: white;
+    border-radius: 16px;
+    padding: 18px;
+    box-shadow: 0 5px 20px #17203312;
+}
+
+.card h2 {
+    font-size: 18px;
+    margin: 0 0 13px;
+}
+
+.upload {
+    border: 2px dashed #9bb5d0;
+    border-radius: 12px;
+    padding: 18px;
+    text-align: center;
+    background: #f8fbff;
+}
+
+.upload input {
+    width: 100%;
+    margin-top: 10px;
+}
+
+.aims {
+    max-height: 680px;
+    overflow-y: auto;
+}
+
+.group {
+    margin: 16px 0;
+}
+
+.group-title {
+    font-size: 12px;
+    color: #1769aa;
+    font-weight: bold;
+    text-transform: uppercase;
+    margin-bottom: 7px;
+}
+
+.aim {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: #f4f7fb;
+    color: #24354d;
+    border: 1px solid #dbe4ee;
+    margin: 5px 0;
+    padding: 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.aim:hover {
+    background: #e7f1fa;
+}
+
+.aim.active {
+    background: #1769aa;
+    color: white;
+    border-color: #1769aa;
+}
+
+.workspace {
+    min-height: 650px;
+}
+
+.topline {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+}
+
+.badge {
+    background: #e8f2fb;
+    color: #1769aa;
+    padding: 6px 10px;
+    border-radius: 30px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.small {
+    font-size: 13px;
+    color: #6c7788;
+}
+
+.controls {
+    margin-top: 15px;
+}
+
+.controls label {
+    display: block;
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.controls input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ccd6e2;
+    border-radius: 8px;
+}
+
+.run {
+    width: 100%;
+    border: 0;
+    border-radius: 9px;
+    padding: 13px;
+    background: #1769aa;
+    color: white;
+    font-weight: bold;
+    cursor: pointer;
+    margin-top: 10px;
+}
+
+.run:hover {
+    background: #0f578e;
+}
+
+.info {
+    margin-top: 14px;
+    padding: 12px;
+    border-radius: 10px;
+    background: #f0f7ff;
+    font-size: 13px;
+}
+
+.error {
+    background: #fff0f0;
+    color: #a21d1d;
+}
+
+.images {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    margin-top: 18px;
+}
+
+.panel {
+    border: 1px solid #dce5ef;
+    border-radius: 12px;
+    padding: 12px;
+    background: #fbfcfe;
+    min-height: 320px;
+}
+
+.panel h3 {
+    font-size: 14px;
+    margin: 0 0 10px;
+}
+
+.panel img {
+    width: 100%;
+    height: 350px;
+    object-fit: contain;
+    background: #eef2f6;
+    border-radius: 8px;
+}
+
+.empty {
+    height: 350px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #7a8798;
+    text-align: center;
+}
+
+.metrics {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+}
+
+.metric {
+    padding: 9px 12px;
+    background: #f5f7fa;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+.download {
+    display: inline-block;
+    text-decoration: none;
+    background: #198754;
+    color: white;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-weight: bold;
+    margin-top: 12px;
+}
+
+.hidden {
+    display: none;
+}
+
+@media(max-width:900px) {
+
+    .grid {
+        grid-template-columns: 1fr;
+    }
+
+    .aims {
+        max-height: none;
+    }
+
+    .images {
+        grid-template-columns: 1fr;
+    }
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+<h1>Image Processing Lab Studio</h1>
+
+<p>
+Python + OpenCV Image Processing Practical Laboratory
+</p>
+
+</header>
+
+<div class="wrap">
+
+<div class="grid">
+
+<!-- =====================================================
+     LEFT SIDE
+     ===================================================== -->
+
+<aside class="card">
+
+<h2>1. Upload Image</h2>
+
+<div class="upload">
+
+Select Input Image
+
+<input
+id="image"
+type="file"
+accept="image/*">
+
+</div>
+
+<div
+id="secondBox"
+class="upload hidden"
+style="margin-top:10px">
+
+Second Image / Template
+
+<input
+id="image2"
+type="file"
+accept="image/*">
+
+</div>
+
+<h2 style="margin-top:20px">
+2. Select Aim
+</h2>
+
+<div class="aims">
+
+<!-- PRACTICAL 02 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 02 — Image Operations
+</div>
+
+<button class="aim" data-op="rgb">
+RGB Image
+</button>
+
+<button class="aim" data-op="gray">
+Grayscale
+</button>
+
+<button class="aim" data-op="binary">
+Binary Image
+</button>
+
+<button class="aim" data-op="add">
+Image Addition
+</button>
+
+<button class="aim" data-op="sub">
+Image Subtraction
+</button>
+
+<button class="aim" data-op="mul">
+Image Multiplication
+</button>
+
+<button class="aim" data-op="and">
+Bitwise AND
+</button>
+
+<button class="aim" data-op="or">
+Bitwise OR
+</button>
+
+<button class="aim" data-op="xor">
+Bitwise XOR
+</button>
+
+<button class="aim" data-op="not">
+Bitwise NOT
+</button>
+
+</div>
+
+<!-- POST LAB 02 -->
+
+<div class="group">
+
+<div class="group-title">
+Post Lab 02 — Color Spaces
+</div>
+
+<button class="aim" data-op="hsv">
+HSV
+</button>
+
+<button class="aim" data-op="ycrcb">
+YCrCb
+</button>
+
+<button class="aim" data-op="lab">
+Lab
+</button>
+
+</div>
+
+<!-- PRACTICAL 03 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 03 — Geometric Transformations
+</div>
+
+<button class="aim" data-op="translate">
+Translation
+</button>
+
+<button class="aim" data-op="rotate">
+Rotation
+</button>
+
+<button class="aim" data-op="scale">
+Scaling
+</button>
+
+<button class="aim" data-op="shearx">
+X-axis Shearing
+</button>
+
+<button class="aim" data-op="sheary">
+Y-axis Shearing
+</button>
+
+<button class="aim" data-op="reflectx">
+X-axis Reflection
+</button>
+
+<button class="aim" data-op="reflecty">
+Y-axis Reflection
+</button>
+
+<button class="aim" data-op="crop">
+Cropping
+</button>
+
+</div>
+
+<!-- PRACTICAL 04 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 04 — Enhancement
+</div>
+
+<button class="aim" data-op="negative">
+Negative Image
+</button>
+
+<button class="aim" data-op="brightness">
+Brightness & Contrast
+</button>
+
+<button class="aim" data-op="laplacian">
+Laplacian Sharpening
+</button>
+
+<button class="aim" data-op="hist">
+Histogram Equalization
+</button>
+
+<button class="aim" data-op="threshold">
+Binary Threshold
+</button>
+
+<button class="aim" data-op="thresh_inv">
+Inverse Binary
+</button>
+
+<button class="aim" data-op="trunc">
+Truncate
+</button>
+
+<button class="aim" data-op="tozero">
+To Zero
+</button>
+
+<button class="aim" data-op="tozero_inv">
+To Zero Inverted
+</button>
+
+</div>
+
+<!-- PRACTICAL 05 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 05 — Spatial Filters
+</div>
+
+<button class="aim" data-op="average">
+Averaging Filter
+</button>
+
+<button class="aim" data-op="gaussian">
+Gaussian Filter
+</button>
+
+<button class="aim" data-op="median">
+Median Filter
+</button>
+
+<button class="aim" data-op="bilateral">
+Bilateral Filter
+</button>
+
+</div>
+
+<!-- PRACTICAL 06 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 06 — Restoration
+</div>
+
+<button class="aim" data-op="gauss_noise">
+Gaussian Noise Removal
+</button>
+
+<button class="aim" data-op="sp_noise">
+Salt & Pepper Noise Removal
+</button>
+
+<button class="aim" data-op="nlm">
+Non-local Means
+</button>
+
+<button class="aim" data-op="telea">
+Telea Inpainting
+</button>
+
+<button class="aim" data-op="ns">
+Navier-Stokes Inpainting
+</button>
+
+</div>
+
+<!-- PRACTICAL 07 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 07 — Compression
+</div>
+
+<button class="aim" data-op="jpeg">
+JPEG Compression
+</button>
+
+<button class="aim" data-op="png">
+PNG Compression
+</button>
+
+<button class="aim" data-op="rle">
+RLE Analysis
+</button>
+
+<button class="aim" data-op="lzw">
+LZW Analysis
+</button>
+
+</div>
+
+<!-- PRACTICAL 08 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 08 — Morphology
+</div>
+
+<button class="aim" data-op="erosion">
+Erosion
+</button>
+
+<button class="aim" data-op="dilation">
+Dilation
+</button>
+
+<button class="aim" data-op="opening">
+Opening
+</button>
+
+<button class="aim" data-op="closing">
+Closing
+</button>
+
+</div>
+
+<!-- PRACTICAL 09 -->
+
+<div class="group">
+
+<div class="group-title">
+Practical 09 — Detection
+</div>
+
+<button class="aim" data-op="correlation">
+Correlation / Template Matching
+</button>
+
+</div>
+
+<!-- POST LAB 03 -->
+
+<div class="group">
+
+<div class="group-title">
+Post Lab 03 — Edge Detection
+</div>
+
+<button class="aim" data-op="canny">
+Canny Edge Detection
+</button>
+
+<button class="aim" data-op="sobel">
+Sobel Edge Detection
+</button>
+
+<button class="aim" data-op="prewitt">
+Prewitt Edge Detection
+</button>
+
+</div>
+
+</div>
+
+</aside>
+
+<!-- =====================================================
+     RIGHT SIDE
+     ===================================================== -->
+
+<main class="card workspace">
+
+<div class="topline">
+
+<div>
+
+<h2 id="title">
+Select an operation
+</h2>
+
+<div
+class="small"
+id="description">
+
+Upload an image and select an aim.
+
+</div>
+
+</div>
+
+<span
+class="badge"
+id="status">
+
+Ready
+
+</span>
+
+</div>
+
+<div
+id="controls"
+class="controls">
+
+</div>
+
+<button
+id="run"
+class="run">
+
+Run Selected Operation
+
+</button>
+
+<div
+id="message"
+class="info">
+
+Select an operation to process your uploaded image.
+
+</div>
+
+<div class="images">
+
+<div class="panel">
+
+<h3>
+Original Input
+</h3>
+
+<div
+id="origEmpty"
+class="empty">
+
+Your uploaded image will appear here.
+
+</div>
+
+<img
+id="orig"
+class="hidden">
+
+</div>
+
+<div class="panel">
+
+<h3>
+Processed Output
+</h3>
+
+<div
+id="outEmpty"
+class="empty">
+
+Processed output will appear here.
+
+</div>
+
+<img
+id="out"
+class="hidden">
+
+</div>
+
+</div>
+
+<div
+id="metrics"
+class="metrics">
+
+</div>
+
+<a
+id="download"
+class="download hidden">
+
+Download Output
+
+</a>
+
+</main>
+
+</div>
+
+</div>
+
+
+<script>
+
+let selected = "";
+
+const descriptions = {
+
+rgb: "Convert the image to RGB representation.",
+gray: "Convert the image to grayscale.",
+binary: "Convert the image to binary using threshold 127.",
+
+add: "Add two images using cv2.addWeighted().",
+sub: "Subtract the second image from the first image.",
+mul: "Multiply corresponding image pixels.",
+
+and: "Bitwise AND operation.",
+or: "Bitwise OR operation.",
+xor: "Bitwise XOR operation.",
+not: "Bitwise NOT operation.",
+
+hsv: "Convert BGR image to HSV.",
+ycrcb: "Convert BGR image to YCrCb.",
+lab: "Convert BGR image to Lab.",
+
+translate: "Translation using x=100 and y=50.",
+rotate: "Rotation by 30 degrees with scale 0.6.",
+scale: "Scale image to 60 percent.",
+shearx: "X-axis shearing.",
+sheary: "Y-axis shearing.",
+reflectx: "Reflection along X-axis.",
+reflecty: "Reflection along Y-axis.",
+crop: "Crop the central region.",
+
+negative: "Negative image using 255 - pixel.",
+brightness: "Brightness and contrast adjustment.",
+laplacian: "Laplacian sharpening.",
+hist: "Histogram equalization.",
+
+threshold: "Binary threshold.",
+thresh_inv: "Inverse binary threshold.",
+trunc: "Truncate threshold.",
+tozero: "To Zero threshold.",
+tozero_inv: "To Zero Inverted threshold.",
+
+average: "5x5 averaging filter.",
+gaussian: "5x5 Gaussian filter.",
+median: "5x5 median filter.",
+bilateral: "Bilateral edge-preserving filter.",
+
+gauss_noise: "Gaussian noise removal.",
+sp_noise: "Salt and pepper noise removal.",
+nlm: "Non-local Means denoising.",
+telea: "Telea image inpainting.",
+ns: "Navier-Stokes image inpainting.",
+
+jpeg: "JPEG compression with quality 30.",
+png: "PNG lossless compression.",
+rle: "Run Length Encoding analysis.",
+lzw: "LZW compression analysis.",
+
+erosion: "5x5 rectangular erosion.",
+dilation: "5x5 rectangular dilation.",
+opening: "5x5 rectangular opening.",
+closing: "5x5 rectangular closing.",
+
+correlation: "Template matching using TM_CCOEFF_NORMED.",
+
+canny: "Canny edge detection.",
+sobel: "Sobel edge detection.",
+prewitt: "Prewitt edge detection."
+
+};
+
+
+const secondImageOperations = new Set([
+    "add",
+    "sub",
+    "mul",
+    "and",
+    "or",
+    "xor",
+    "correlation"
+]);
+
+
+document.querySelectorAll(".aim").forEach(button => {
+
+    button.addEventListener("click", () => {
+
+        document
+        .querySelectorAll(".aim")
+        .forEach(x => x.classList.remove("active"));
+
+        button.classList.add("active");
+
+        selected = button.dataset.op;
+
+        document.getElementById("title")
+        .textContent = button.textContent;
+
+        document.getElementById("description")
+        .textContent = descriptions[selected];
+
+        document
+        .getElementById("secondBox")
+        .classList
+        .toggle(
+            "hidden",
+            !secondImageOperations.has(selected)
+        );
+
+        if (selected === "brightness") {
+
+            document.getElementById("controls").innerHTML = `
+
+            <label>
+            Brightness
+            <input
+            id="brightness"
+            type="number"
+            value="10">
+            </label>
+
+            <label>
+            Contrast
+            <input
+            id="contrast"
+            type="number"
+            step="0.1"
+            value="2.3">
+            </label>
+
+            `;
+
+        } else {
+
+            document.getElementById("controls").innerHTML =
+            "<span class='small'>Default practical parameters will be used.</span>";
+
+        }
+
+    });
+
+});
+
+
+document.getElementById("image")
+.addEventListener("change", function(e) {
+
+    if (!e.target.files[0]) return;
+
+    const url =
+    URL.createObjectURL(e.target.files[0]);
+
+    const image =
+    document.getElementById("orig");
+
+    image.src = url;
+
+    image.classList.remove("hidden");
+
+    document
+    .getElementById("origEmpty")
+    .classList.add("hidden");
+
+    document
+    .getElementById("status")
+    .textContent = "Image Selected";
+
+});
+
+
+document.getElementById("run")
+.addEventListener("click", async function() {
+
+    const image =
+    document.getElementById("image").files[0];
+
+    if (!image) {
+
+        alert("Please upload an image first.");
+
+        return;
+
+    }
+
+    if (!selected) {
+
+        alert("Please select an operation.");
+
+        return;
+
+    }
+
+    const form =
+    new FormData();
+
+    form.append(
+        "image",
+        image
+    );
+
+    form.append(
+        "operation",
+        selected
+    );
+
+
+    const second =
+    document.getElementById("image2").files[0];
+
+    if (second) {
+
+        form.append(
+            "image2",
+            second
+        );
+
+    }
+
+
+    if (selected === "brightness") {
+
+        form.append(
+            "brightness",
+            document.getElementById("brightness").value
+        );
+
+        form.append(
+            "contrast",
+            document.getElementById("contrast").value
+        );
+
+    }
+
+
+    document
+    .getElementById("status")
+    .textContent = "Processing...";
+
+
+    try {
+
+        const response =
+        await fetch(
+            "/process",
+            {
+                method: "POST",
+                body: form
+            }
+        );
+
+
+        const data =
+        await response.json();
+
+
+        if (!response.ok) {
+
+            throw new Error(
+                data.error || "Processing failed."
+            );
+
+        }
+
+
+        document
+        .getElementById("status")
+        .textContent = "Completed";
+
+
+        document
+        .getElementById("message")
+        .textContent =
+        data.message;
+
+
+        if (data.image) {
+
+            const output =
+            document.getElementById("out");
+
+            output.src =
+            data.image;
+
+            output.classList
+            .remove("hidden");
+
+            document
+            .getElementById("outEmpty")
+            .classList
+            .add("hidden");
+
+
+            const download =
+            document
+            .getElementById("download");
+
+            download.href =
+            data.image;
+
+            download.download =
+            "processed_output.png";
+
+            download.classList
+            .remove("hidden");
+
+        }
+
+
+        document
+        .getElementById("metrics")
+        .innerHTML =
+        (data.metrics || [])
+        .map(
+            x => `<div class="metric">${x}</div>`
+        )
+        .join("");
+
+
+    }
+
+    catch(error) {
+
+        document
+        .getElementById("status")
+        .textContent = "Error";
+
+        document
+        .getElementById("message")
+        .textContent =
+        error.message;
+
+        document
+        .getElementById("message")
+        .className =
+        "info error";
+
+    }
+
+});
+
+</script>
+
+</body>
+</html>
+'''
+
+
+# ============================================================
+# BACKEND FUNCTIONS
+# ============================================================
+
+def read_image(file):
+
+    data = np.frombuffer(
+        file.read(),
+        np.uint8
+    )
+
+    image = cv2.imdecode(
+        data,
+        cv2.IMREAD_COLOR
+    )
+
+    if image is None:
+
+        raise ValueError(
+            "Invalid or unsupported image."
+        )
+
+    return image
+
+
+def resize_second_image(first, second):
+
+    return cv2.resize(
+        second,
+        (
+            first.shape[1],
+            first.shape[0]
+        )
+    )
+
+
+def encode_image(image):
+
+    success, buffer = cv2.imencode(
+        ".png",
+        image
+    )
+
+    if not success:
+
+        raise ValueError(
+            "Unable to encode output image."
+        )
+
+    return (
+        "data:image/png;base64,"
+        + base64.b64encode(buffer).decode()
+    )
+
+
+# ============================================================
+# RLE
+# ============================================================
+
+def rle_encode(data):
+
+    if len(data) == 0:
+        return []
+
+    encoded = []
+
+    previous = int(data[0])
+    count = 1
+
+    for value in data[1:]:
+
+        value = int(value)
+
+        if value == previous:
+
+            count += 1
+
+        else:
+
+            encoded.append(
+                (previous, count)
+            )
+
+            previous = value
+            count = 1
+
+    encoded.append(
+        (previous, count)
+    )
+
+    return encoded
+
+
+# ============================================================
+# LZW
+# ============================================================
+
+def lzw_compress(data):
+
+    dictionary = {
+        bytes([i]): i
+        for i in range(256)
+    }
+
+    dictionary_size = 256
+
+    w = b""
+
+    compressed = []
+
+    for value in data:
+
+        c = bytes([int(value)])
+
+        wc = w + c
+
+        if wc in dictionary:
+
+            w = wc
+
+        else:
+
+            if w:
+                compressed.append(
+                    dictionary[w]
+                )
+
+            dictionary[wc] = dictionary_size
+
+            dictionary_size += 1
+
+            w = c
+
+    if w:
+
+        compressed.append(
+            dictionary[w]
+        )
+
+    return compressed
+
+
+# ============================================================
+# IMAGE PROCESSING ENGINE
+# ============================================================
+
+def process_image(
+    image,
+    operation,
+    second=None,
+    params=None
+):
+
+    params = params or {}
+
+    metrics = []
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 02
+    # --------------------------------------------------------
+
+    if operation == "rgb":
+
+        output = image.copy()
+
+
+    elif operation == "gray":
+
+        output = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+
+    elif operation == "binary":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        _, output = cv2.threshold(
+            gray,
+            127,
+            255,
+            cv2.THRESH_BINARY
+        )
+
+
+    elif operation in {
+        "add",
+        "sub",
+        "mul",
+        "and",
+        "or",
+        "xor"
+    }:
+
+        if second is None:
+
+            raise ValueError(
+                "This operation requires a second image."
+            )
+
+        second = resize_second_image(
+            image,
+            second
+        )
+
+
+        if operation == "add":
+
+            output = cv2.addWeighted(
+                image,
+                0.5,
+                second,
+                0.4,
+                0
+            )
+
+
+        elif operation == "sub":
+
+            output = cv2.subtract(
+                image,
+                second
+            )
+
+
+        elif operation == "mul":
+
+            output = cv2.multiply(
+                image.astype(np.float32) / 255,
+                second.astype(np.float32) / 255
+            )
+
+            output = np.clip(
+                output * 255,
+                0,
+                255
+            ).astype(np.uint8)
+
+
+        else:
+
+            a = cv2.cvtColor(
+                image,
+                cv2.COLOR_BGR2GRAY
+            )
+
+            b = cv2.cvtColor(
+                second,
+                cv2.COLOR_BGR2GRAY
+            )
+
+            _, a = cv2.threshold(
+                a,
+                127,
+                255,
+                cv2.THRESH_BINARY
+            )
+
+            _, b = cv2.threshold(
+                b,
+                127,
+                255,
+                cv2.THRESH_BINARY
+            )
+
+            if operation == "and":
+
+                output = cv2.bitwise_and(a, b)
+
+            elif operation == "or":
+
+                output = cv2.bitwise_or(a, b)
+
+            else:
+
+                output = cv2.bitwise_xor(a, b)
+
+
+    elif operation == "not":
+
+        output = cv2.bitwise_not(
+            image
+        )
+
+
+    # --------------------------------------------------------
+    # POST LAB 02
+    # --------------------------------------------------------
+
+    elif operation == "hsv":
+
+        output = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2HSV
+        )
+
+
+    elif operation == "ycrcb":
+
+        output = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2YCrCb
+        )
+
+
+    elif operation == "lab":
+
+        output = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2LAB
+        )
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 03
+    # --------------------------------------------------------
+
+    elif operation == "translate":
+
+        h, w = image.shape[:2]
+
+        matrix = np.float32([
+            [1, 0, 100],
+            [0, 1, 50]
+        ])
+
+        output = cv2.warpAffine(
+            image,
+            matrix,
+            (w, h)
+        )
+
+
+    elif operation == "rotate":
+
+        h, w = image.shape[:2]
+
+        matrix = cv2.getRotationMatrix2D(
+            (w / 2, h / 2),
+            30,
+            0.6
+        )
+
+        output = cv2.warpAffine(
+            image,
+            matrix,
+            (w, h)
+        )
+
+
+    elif operation == "scale":
+
+        output = cv2.resize(
+            image,
+            None,
+            fx=0.6,
+            fy=0.6,
+            interpolation=cv2.INTER_LINEAR
+        )
+
+
+    elif operation == "shearx":
+
+        h, w = image.shape[:2]
+
+        matrix = np.float32([
+            [1, 0.3, 0],
+            [0, 1, 0]
+        ])
+
+        output = cv2.warpAffine(
+            image,
+            matrix,
+            (
+                w + int(0.3 * h),
+                h
+            )
+        )
+
+
+    elif operation == "sheary":
+
+        h, w = image.shape[:2]
+
+        matrix = np.float32([
+            [1, 0, 0],
+            [0.3, 1, 0]
+        ])
+
+        output = cv2.warpAffine(
+            image,
+            matrix,
+            (
+                w,
+                h + int(0.3 * w)
+            )
+        )
+
+
+    elif operation == "reflectx":
+
+        output = cv2.flip(
+            image,
+            0
+        )
+
+
+    elif operation == "reflecty":
+
+        output = cv2.flip(
+            image,
+            1
+        )
+
+
+    elif operation == "crop":
+
+        h, w = image.shape[:2]
+
+        x1 = int(0.2 * w)
+        x2 = int(0.8 * w)
+
+        y1 = int(0.2 * h)
+        y2 = int(0.8 * h)
+
+        output = image[
+            y1:y2,
+            x1:x2
+        ]
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 04
+    # --------------------------------------------------------
+
+    elif operation == "negative":
+
+        output = 255 - image
+
+
+    elif operation == "brightness":
+
+        brightness = float(
+            params.get(
+                "brightness",
+                10
+            )
+        )
+
+        contrast = float(
+            params.get(
+                "contrast",
+                2.3
+            )
+        )
+
+        output = cv2.addWeighted(
+            image,
+            contrast,
+            np.zeros_like(image),
+            0,
+            brightness
+        )
+
+
+    elif operation == "laplacian":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        lap = cv2.Laplacian(
+            gray,
+            cv2.CV_64F
+        )
+
+        output = np.uint8(
+            np.absolute(lap)
+        )
+
+
+    elif operation == "hist":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        output = cv2.equalizeHist(
+            gray
+        )
+
+
+    elif operation in {
+        "threshold",
+        "thresh_inv",
+        "trunc",
+        "tozero",
+        "tozero_inv"
+    }:
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        types = {
+
+            "threshold":
+                cv2.THRESH_BINARY,
+
+            "thresh_inv":
+                cv2.THRESH_BINARY_INV,
+
+            "trunc":
+                cv2.THRESH_TRUNC,
+
+            "tozero":
+                cv2.THRESH_TOZERO,
+
+            "tozero_inv":
+                cv2.THRESH_TOZERO_INV
+
+        }
+
+        _, output = cv2.threshold(
+            gray,
+            127,
+            255,
+            types[operation]
+        )
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 05
+    # --------------------------------------------------------
+
+    elif operation == "average":
+
+        output = cv2.blur(
+            image,
+            (5, 5)
+        )
+
+
+    elif operation == "gaussian":
+
+        output = cv2.GaussianBlur(
+            image,
+            (5, 5),
+            0
+        )
+
+
+    elif operation == "median":
+
+        output = cv2.medianBlur(
+            image,
+            5
+        )
+
+
+    elif operation == "bilateral":
+
+        output = cv2.bilateralFilter(
+            image,
+            9,
+            75,
+            75
+        )
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 06
+    # --------------------------------------------------------
+
+    elif operation == "gauss_noise":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        output = cv2.GaussianBlur(
+            gray,
+            (5, 5),
+            0
+        )
+
+
+    elif operation == "sp_noise":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        output = cv2.medianBlur(
+            gray,
+            5
+        )
+
+
+    elif operation == "nlm":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        output = cv2.fastNlMeansDenoising(
+            gray,
+            None,
+            30,
+            7,
+            21
+        )
+
+
+    elif operation in {
+        "telea",
+        "ns"
+    }:
+
+        h, w = image.shape[:2]
+
+        mask = np.zeros(
+            (h, w),
+            dtype=np.uint8
+        )
+
+        x1 = int(0.35 * w)
+        x2 = int(0.65 * w)
+
+        y1 = int(0.35 * h)
+        y2 = int(0.65 * h)
+
+        mask[
+            y1:y2,
+            x1:x2
+        ] = 255
+
+
+        if operation == "telea":
+
+            method = cv2.INPAINT_TELEA
+
+        else:
+
+            method = cv2.INPAINT_NS
+
+
+        output = cv2.inpaint(
+            image,
+            mask,
+            3,
+            method
+        )
+
+        metrics.append(
+            "Demo mask: central damaged region"
+        )
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 07
+    # --------------------------------------------------------
+
+    elif operation in {
+        "jpeg",
+        "png"
+    }:
+
+        if operation == "jpeg":
+
+            extension = ".jpg"
+
+            compression = [
+                cv2.IMWRITE_JPEG_QUALITY,
+                30
+            ]
+
+        else:
+
+            extension = ".png"
+
+            compression = [
+                cv2.IMWRITE_PNG_COMPRESSION,
+                9
+            ]
+
+
+        success, buffer = cv2.imencode(
+            extension,
+            image,
+            compression
+        )
+
+        if not success:
+
+            raise ValueError(
+                "Compression failed."
+            )
+
+
+        output = cv2.imdecode(
+            buffer,
+            cv2.IMREAD_COLOR
+        )
+
+
+        compressed_size = len(
+            buffer
+        )
+
+
+        png_reference = len(
+            cv2.imencode(
+                ".png",
+                image
+            )[1]
+        )
+
+
+        metrics.append(
+            f"Compressed Size: "
+            f"{compressed_size / 1024:.2f} KB"
+        )
+
+        metrics.append(
+            f"Original PNG Size: "
+            f"{png_reference / 1024:.2f} KB"
+        )
+
+        metrics.append(
+            f"Compression Ratio: "
+            f"{png_reference / max(compressed_size,1):.2f}:1"
+        )
+
+
+    elif operation in {
+        "rle",
+        "lzw"
+    }:
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        pixels = gray.flatten().tolist()
+
+
+        if operation == "rle":
+
+            encoded = rle_encode(
+                pixels
+            )
+
+        else:
+
+            encoded = lzw_compress(
+                pixels
+            )
+
+
+        original_pixels = len(
+            pixels
+        )
+
+        estimated_size = (
+            len(encoded) * 2
+        )
+
+
+        metrics.append(
+            f"Original Pixels: "
+            f"{original_pixels}"
+        )
+
+        metrics.append(
+            f"Encoded Entries: "
+            f"{len(encoded)}"
+        )
+
+        metrics.append(
+            f"Estimated Encoded Size: "
+            f"{estimated_size / 1024:.2f} KB"
+        )
+
+        metrics.append(
+            f"Estimated Ratio: "
+            f"{original_pixels / max(estimated_size,1):.2f}:1"
+        )
+
+
+        output = gray
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 08
+    # --------------------------------------------------------
+
+    elif operation in {
+        "erosion",
+        "dilation",
+        "opening",
+        "closing"
+    }:
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+
+        _, binary = cv2.threshold(
+            gray,
+            127,
+            255,
+            cv2.THRESH_BINARY
+        )
+
+
+        kernel = cv2.getStructuringElement(
+            cv2.MORPH_RECT,
+            (5, 5)
+        )
+
+
+        operations = {
+
+            "erosion":
+                cv2.MORPH_ERODE,
+
+            "dilation":
+                cv2.MORPH_DILATE,
+
+            "opening":
+                cv2.MORPH_OPEN,
+
+            "closing":
+                cv2.MORPH_CLOSE
+
+        }
+
+
+        output = cv2.morphologyEx(
+            binary,
+            operations[operation],
+            kernel
+        )
+
+
+    # --------------------------------------------------------
+    # PRACTICAL 09
+    # --------------------------------------------------------
+
+    elif operation == "correlation":
+
+        if second is None:
+
+            raise ValueError(
+                "Please upload a template image."
+            )
+
+
+        source = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        template = cv2.cvtColor(
+            second,
+            cv2.COLOR_BGR2GRAY
+        )
+
+
+        sh, sw = source.shape
+        th, tw = template.shape
+
+
+        if th > sh or tw > sw:
+
+            template = cv2.resize(
+                template,
+                (
+                    min(tw, sw),
+                    min(th, sh)
+                )
+            )
+
+
+        result = cv2.matchTemplate(
+            source,
+            template,
+            cv2.TM_CCOEFF_NORMED
+        )
+
+
+        _, max_value, _, max_location = \
+            cv2.minMaxLoc(result)
+
+
+        output = image.copy()
+
+
+        th, tw = template.shape
+
+
+        if max_value >= 0.8:
+
+            cv2.rectangle(
+                output,
+                max_location,
+                (
+                    max_location[0] + tw,
+                    max_location[1] + th
+                ),
+                (0, 255, 0),
+                3
+            )
+
+
+            metrics.append(
+                f"Match Found: "
+                f"{max_value:.3f}"
+            )
+
+        else:
+
+            metrics.append(
+                f"No match above 0.8. "
+                f"Best score: {max_value:.3f}"
+            )
+
+
+    # --------------------------------------------------------
+    # POST LAB 03
+    # --------------------------------------------------------
+
+    elif operation == "canny":
+
+        output = cv2.Canny(
+            image,
+            100,
+            200
+        )
+
+
+    elif operation == "sobel":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+
+        sobel_x = cv2.Sobel(
+            gray,
+            cv2.CV_64F,
+            1,
+            0,
+            ksize=3
+        )
+
+
+        sobel_y = cv2.Sobel(
+            gray,
+            cv2.CV_64F,
+            0,
+            1,
+            ksize=3
+        )
+
+
+        magnitude = cv2.magnitude(
+            sobel_x,
+            sobel_y
+        )
+
+
+        output = np.uint8(
+            magnitude
+        )
+
+
+    elif operation == "prewitt":
+
+        gray = cv2.cvtColor(
+            image,
+            cv2.COLOR_BGR2GRAY
+        )
+
+
+        kernel_x = np.array(
+            [
+                [-1, 0, 1],
+                [-1, 0, 1],
+                [-1, 0, 1]
+            ],
+            dtype=np.float32
+        )
+
+
+        kernel_y = np.array(
+            [
+                [-1, -1, -1],
+                [0, 0, 0],
+                [1, 1, 1]
+            ],
+            dtype=np.float32
+        )
+
+
+        prewitt_x = cv2.filter2D(
+            gray,
+            cv2.CV_64F,
+            kernel_x
+        )
+
+
+        prewitt_y = cv2.filter2D(
+            gray,
+            cv2.CV_64F,
+            kernel_y
+        )
+
+
+        magnitude = cv2.magnitude(
+            prewitt_x,
+            prewitt_y
+        )
+
+
+        output = np.uint8(
+            magnitude
+        )
+
+
+    else:
+
+        raise ValueError(
+            "Unknown operation."
+        )
+
+
+    return output, metrics
+
+
+# ============================================================
+# FLASK ROUTES
+# ============================================================
+
+@app.route("/")
+def home():
+
+    return render_template_string(
+        HTML
+    )
+
+
+@app.route(
+    "/process",
+    methods=["POST"]
+)
+def process():
+
+    try:
+
+        operation = request.form.get(
+            "operation"
+        )
+
+
+        if "image" not in request.files:
+
+            return jsonify(
+                error="Input image is required."
+            ), 400
+
+
+        image = read_image(
+            request.files["image"]
+        )
+
+
+        second = None
+
+
+        if (
+            "image2"
+            in request.files
+            and request.files["image2"].filename
+        ):
+
+            second = read_image(
+                request.files["image2"]
+            )
+
+
+        output, metrics = process_image(
+            image,
+            operation,
+            second,
+            request.form
+        )
+
+
+        return jsonify({
+
+            "image":
+                encode_image(output),
+
+            "metrics":
+                metrics,
+
+            "message":
+                "Operation completed successfully."
+
+        })
+
+
+    except Exception as error:
+
+        return jsonify(
+            error=str(error)
+        ), 400
+
+
+# ============================================================
+# RUN SERVER
+# ============================================================
+
+if __name__ == "__main__":
+
+    app.run(
+        host="127.0.0.1",
+        port=5000,
+        debug=True
+    )
